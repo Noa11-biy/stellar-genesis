@@ -47,7 +47,6 @@ mvn clean compile	# Compile tout
 
 mvn test		# Lance tous les tests
 
-```bash
 
 
 
