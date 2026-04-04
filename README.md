@@ -1,10 +1,10 @@
 <!-- === Fichier: README.md === -->
 
-\# Stellar Genesis
+# Stellar Genesis
 
 
 
-\*\*Space Survival Factory RPG\*\* - Java / jMonkeyEngine 3
+**Space Survival Factory RPG** - Java / jMonkeyEngine 3
 
 
 
@@ -18,7 +18,7 @@ thermodynamique, mécanique orbitale.
 
 
 
-\## Architecture 
+## Architecture 
 
 
 
@@ -32,14 +32,14 @@ stellar-genesis/
 
 
 
-\## Prérequis
+## Prérequis
 
 * Java 17+ (LTS)
 * Maven 3.8+
 
 
 
-\## Build \& Test
+## Build & Test
 
 ```bash
 
@@ -47,6 +47,7 @@ mvn clean compile	# Compile tout
 
 mvn test		# Lance tous les tests
 
+```bash
 
 
 
