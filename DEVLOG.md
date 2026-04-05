@@ -71,7 +71,7 @@
 
 ### Prochaine session
 
-* Implémenter Vec3.java et Mat4.java (bibliothèque mathématique maison)
+* Implémenter `Vec3.java` et `Mat4.java` (bibliothèque mathématique maison)
 * Tests unitaires : produit salaire, produit vectoriel, transformations
 
 ---
@@ -86,12 +86,12 @@
 
 ### Ce que j'ai fait
 
- * Création de Vec3.java, MathUtils.java, PlanetPhysics.java
- * Tests Unitaire : Vec3.java :
+ * Création de `Vec3.java`, `MathUtils.java`, `PlanetPhysics.java`
+ * Tests Unitaire : `Vec3.java` :
  * addition de Vecteurs, soustration de Vecteurs, produit scalaire, produit Vectorielle, norme du Vecteur, normalisation, lerp Millieu
- * MathUtils.java :
+ * `MathUtils.java` :
  * clamp dans l'intervalle, clamp sous le min, clamp au dessus du max, inverse Lerp, remap valeur, approx Equals
- * PlanetPhysics.java :
+ * `PlanetPhysics.java` :
  * gravité terrestre correcte, vitesse de libération de la Terre, Température équilibre, pression atmosphérique Altitude, gravité Lune correcte, vitesse orbital ISS
 
 
