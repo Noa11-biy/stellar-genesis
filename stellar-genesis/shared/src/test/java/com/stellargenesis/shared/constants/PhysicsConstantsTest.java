@@ -91,7 +91,8 @@ class PhysicsConstantsTest {
      * v_esc = √(2GM/R)
      *
      * C'est la vitesse minimum pour quitter la Terre sans propulsion continue.
-     * C'est aussi un paramètre clé du gameplay : sur une planète avec
+     * C'est aussi un paramètre clé du gameplay : sur une p
+     * lanète avec
      * v_esc élevée, le joueur a besoin de plus de carburant pour décoller.
      */
     @Test
