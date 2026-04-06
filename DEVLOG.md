@@ -78,7 +78,15 @@
 
 
 
-## Session 002 - [05/04/2026]
+\## Session 002 - \[05/04/2026]
+
+\*\*Durée\*\* : 5-6h
+
+\*\*Phase\*\* : 1 - Fondations mathématiques et physiques 
+
+
+\### Ce que j'ai fait : 
+>>>>>>> 0593069 (feat: Mat4 matrices 4x4 + transformations + inverse + tests)
 
 **Durée** : ~5-6h
 
