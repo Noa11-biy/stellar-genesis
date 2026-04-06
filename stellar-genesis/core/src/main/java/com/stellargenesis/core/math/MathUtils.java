@@ -93,4 +93,129 @@ public final class MathUtils {
         return approxEquals(a, b, 1e-6);
     }
 
+    // ============================================================
+    // SMOOTHSTEP : courbe lisse entre 0 et 1
+    //
+    // Comme lerp mais avec une transition douce (pas de cassure).
+    // Formule : 3t² - 2t³
+    //
+    //   t=0 → 0, t=1 → 1, mais la dérivée est 0 aux bords
+    //   → transition fluide, pas de "snap"
+    //
+    // Utilité : transition jour/nuit, fondu de biomes,
+    //           mélange de textures selon l'altitude
+    // ============================================================
+
+    public static double smoothstep(double t){
+        t = clamp(t, 0.0, 1.0);
+        return t * t * (3.0 -2.0 * t);
+    }
+
+    // ============================================================
+    // SMOOTHERSTEP : version encore plus lisse (Ken Perlin)
+    //
+    // Formule : 6t⁵ - 15t⁴ + 10t³
+    //
+    // Dérivée PREMIÈRE et SECONDE = 0 aux bords
+    // → encore plus fluide, utilisé dans le bruit de Perlin
+    //
+    // Utilité : même chose que smoothstep mais quand on a besoin
+    //           que la courbe soit C² (pas de discontinuité d'accélération)
+    // ============================================================
+
+    public static double smootherstep(double t){
+        t = clamp(t, 0.0 , 1.0);
+        return t * t * t *(t* (t * 6.0 - 15.0) + 10.0);
+    }
+
+    // ============================================================
+    // NOISE 1D : bruit pseudo-aléatoire déterministe
+    //
+    // Entrée : un double quelconque (position, temps...)
+    // Sortie : valeur dans [-1, 1], toujours la même pour la même entrée
+    //
+    // Principe : on utilise le hash d'un entier dérivé de l'entrée,
+    //            puis on interpole entre deux valeurs hachées voisines
+    //            avec smootherstep pour que ce soit lisse.
+    //
+    // Ce n'est PAS du Perlin/Simplex (qui est en 2D/3D).
+    // C'est un bruit 1D simple pour varier des paramètres :
+    //   - oscillation de température au cours du temps
+    //   - variation de densité de minerai selon la profondeur
+    //   - petites perturbations sur n'importe quel paramètre
+    // ============================================================
+
+    public static double noise1D(double x){
+        // Partie entière (floor) et fraction
+        long xi = (long) Math.floor(x);
+        double frac = x - xi;
+
+        // Hash des deux points voisins -> valeur dans [-1, 1]
+        double a = hash1D(xi);
+        double b = hash1D(xi + 1);
+
+        // Interpolation lisse entre les deux
+        double t = smootherstep(frac);
+        return lerp(a, b, t);
+    }
+
+    // ============================================================
+    // HASH 1D : fonction de hachage entier → double dans [-1, 1]
+    //
+    // Technique classique : on mélange les bits d'un long avec
+    // des multiplications et XOR pour obtenir un résultat
+    // qui "a l'air aléatoire" mais est 100% déterministe.
+    //
+    // Propriété essentielle : hash1D(42) renvoie TOUJOURS la même valeur.
+    // → même seed = même monde généré
+    // ============================================================
+
+    private static double hash1D(long n){
+        n = n * 6364136223846793005L + 1442695040888963407L;
+        n = (n >> 16) ^ n;
+        n = n * 6364136223846793005L + 1442695040888963407L;
+        // Normaliser dans [-1,1]
+        return (n & 0xFFFFFFFFL) / (double) 0xFFFFFFFFL * 2.0 - 1.0;
+    }
+
+    // ============================================================
+    // NOISE 1D MULTI-OCTAVE (fBm 1D)
+    //
+    // Même principe que le bruit fractal 2D/3D qu'on utilisera
+    // pour le terrain, mais en 1D.
+    //
+    // On superpose plusieurs "couches" de bruit :
+    //   - Octave 1 : grandes variations lentes (fréquence basse)
+    //   - Octave 2 : variations moyennes (fréquence × lacunarité)
+    //   - Octave 3 : petits détails (fréquence encore plus haute)
+    //
+    // À chaque octave :
+    //   - fréquence × lacunarité (les détails sont plus fins)
+    //   - amplitude × persistance (les détails ont moins d'impact)
+    //
+    // Paramètres :
+    //   octaves     : nombre de couches (4-8 typique)
+    //   persistance : 0.5 = chaque octave a moitié moins d'impact
+    //   lacunarité  : 2.0 = chaque octave a 2× plus de détails
+    // ============================================================
+
+    public static double fbmNoise1D(double x, int octaves, double persistance, double lacunarite){
+        double total = 0.0;
+        double amplitude = 1.0;
+        double frequence = 1.0;
+        double maxAmplitude = 0.0;
+
+        for (int i = 0; i < octaves; i++) {
+            total += noise1D(x * frequence) * amplitude;
+            maxAmplitude += amplitude;
+            amplitude *= persistance;
+            frequence *= lacunarite;
+        }
+
+        // Normaliser dans [-1, 1]
+        return total / maxAmplitude;
+    }
+
+
+
 }
