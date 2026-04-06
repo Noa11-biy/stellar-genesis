@@ -78,12 +78,14 @@
 
 
 
-\## Session 002 - \[DATE]
+\## Session 002 - \[05/04/2026]
 
-\*\*Durée\*\* : ...
+\*\*Durée\*\* : 5-6h
 
-\*\*Phase\*\* : 1 - Fondations matémathiques
+\*\*Phase\*\* : 1 - Fondations mathématiques et physiques 
 
+
+\### Ce que j'ai fait : 
 
 
 
