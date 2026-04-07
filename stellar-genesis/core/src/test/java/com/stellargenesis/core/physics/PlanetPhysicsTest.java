@@ -1,5 +1,7 @@
 package com.stellargenesis.core.physics;
 
+import com.stellargenesis.core.math.MathUtils;
+import com.stellargenesis.core.math.Vec3;
 import com.stellargenesis.shared.constants.PhysicsConstants;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -111,4 +113,37 @@ class PlanetPhysicsTest {
             PlanetPhysics.equilibriumTemperature(5778, 6.957e8, 1.496e11, -0.5);
         });
     }
+
+    @Test
+    void scenarioComplet_GenererUnePlaneteEtCalculerSesPrametres(){
+
+        // Paramètre d'entrée : une planète type
+        double masse = 5.972e24;
+        double rayon = 6.371e6;
+        double distanceEtoile = 1.496e11;
+        double tempEtoile = 5778;
+        double rayonEtoile = 6.957e8;
+        double albedo = 0.3;
+
+        // Calculs physiques
+        double g = PlanetPhysics.surfaceGravity(masse, rayon);
+        double T = PlanetPhysics.equilibriumTemperature(tempEtoile, rayonEtoile, distanceEtoile, albedo);
+        double vEsc = PlanetPhysics.escapeVelocity(masse, rayon);
+
+        // Vérif de cohérence juste savoir si c'est le bon ordre de grandeurs
+        assertTrue(g > 9.0 && g < 10.0, "g Terrestre ~9.8");
+        assertTrue(T > 240 && T < 270, "T_eq est 255 K");
+        assertTrue(vEsc > 11000 && vEsc < 11500, "v_esc ~11.2 km/s");
+
+        // Utilisation de MathUtils pour normaliser
+        double gNorm = MathUtils.inverseLerp(0, 30, g); // 0..30 m/s²
+        assertTrue(gNorm > 0.3 && gNorm < 0.4);
+
+        // Utilisation
+        Vec3 positionPlanete = new Vec3(distanceEtoile, 0, 0);
+        assertEquals(distanceEtoile, positionPlanete.length(), 1e3);
+
+    }
+
+
 }
