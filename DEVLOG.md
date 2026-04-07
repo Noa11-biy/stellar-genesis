@@ -174,7 +174,8 @@ Commencer la phase 2 si possible sinon révision de projet
 
 --- 
 
-## Session 005 - [DATE]
+## Session 005 - [07/05/26 - Jsp]
+
 
 
 
