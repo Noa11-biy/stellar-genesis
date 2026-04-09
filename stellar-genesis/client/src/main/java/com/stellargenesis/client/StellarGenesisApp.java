@@ -1,6 +1,8 @@
 package com.stellargenesis.client;
 
 import com.jme3.app.SimpleApplication;
+import com.jme3.font.BitmapFont;
+import com.jme3.font.BitmapText;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
@@ -112,6 +114,13 @@ public class StellarGenesisApp extends SimpleApplication {
         System.out.println("=== DEBUG: Chunk " + testPos + " solid blocks: " + solidCount);
         System.out.println("=== DEBUG: terrainHeight at (0,0): " + worldGenerator.getTerrainHeight(0, 0));
         System.out.println("=== DEBUG: seaLevel: " + worldGenerator.getSeaLevel());
+
+        BitmapFont font = assetManager.loadFont("Interface/Fonts/Default.fnt");
+        BitmapText versionText = new BitmapText(font);
+        versionText.setText("Alpha V0.1");
+        versionText.setSize(font.getCharSet().getRenderedSize());
+        versionText.setLocalTranslation(10, settings.getHeight() - 10, 0);
+        guiNode.attachChild(versionText);
     }
 
     /**
