@@ -14,7 +14,7 @@
 
 
 
-##Session 001 - [04/04/2026]
+## Session 001 - [04/04/2026]
 
 **Durée** : ~3.5-4h
 
@@ -67,7 +67,8 @@
 
 &#x20; (40 000 K) sont des millions de fois plus lumineuses que les naines rouges (3000 K).
 
-
+### Difficulté rencontrées :
+* Pas de grande diffculté rencontré pour cette Session mise à part de bien noté les constantes et de faire attention au arrondi de double le résultat en Java est considéré différent avec les arrondis donc au moins lui dire qu'il y aura une tolérence de plus ou moins 2-3%
 
 ### Prochaine session
 
@@ -78,19 +79,15 @@
 
 
 
-\## Session 002 - \[05/04/2026]
-
-\*\*Durée\*\* : 5-6h
-
-\*\*Phase\*\* : 1 - Fondations mathématiques et physiques 
-
-
-\### Ce que j'ai fait : 
->>>>>>> 0593069 (feat: Mat4 matrices 4x4 + transformations + inverse + tests)
+## Session 002 - [05/04/2026]
 
 **Durée** : ~5-6h
 
 **Phase** : 1 - Fondations matémathiques et physiques
+
+
+### Ce que j'ai pas fait : 
+feat: Mat4 matrices 4x4 + transformations + inverse + tests
 
 ### Ce que j'ai fait
 
@@ -103,13 +100,81 @@
  * gravité terrestre correcte, vitesse de libération de la Terre, Température équilibre, pression atmosphérique Altitude, gravité Lune correcte, vitesse orbital ISS
 
 
+### Ce que j'ai appris/revu
+ * Le produit scalaire : c'est pour me dire dans quel sens sont deux vecteurs généralement utilisé pour l'instensité d'éclairage, détécté un joueurs si il est devant ou derrière un ennemi
+
+* L'interpolation linéaire : elle me permet d'estimer la valeur d'une fonction donnée dans un intervalle de deux points donnés
+
+ * La partie hashCode de Vec3 : elle permet de transformer les 3 coordonnées en un seul int de manière à ce que deux Vec3 différents aient presque toujours un hashCode différent
+POURQUOI pas toujours un hashCode différent ? : un int c'est 32 bits soit 4 milliards de valeurs possibles
+Un Vec3 c'est 3 double donc 3 x 64bits soit 192 bits de combinaisons possibles
+Comprimer 192 bits dans 32 bits c'est mathématiquement impossible que Vec3 ait un hash unique
+
+* Remap : Convetir une valeur d'un intervalle à un autre.
+Je cherche avec inverseLerp un valeurs dans l'intervalle de départ puis avec Lerp (DIFFÉRENT DE CELUI DE `Vec3`)
+Exemple : `remap(50, 0, 100, 200, 400)` : inverLerp me dit que : 50 est à 50% de [0, 100] -> t = 0.5 
+et Lerp me dit que : 50% de [200, 400] -> 300
+Un usage concret pour ce projet : une alititude de 500m sur une planète où max=1000m, je veux convertir en pression entre 1.0 et 0.0bar -> 
+`remap(500, 0, 1000, 1.0, 0.0)` -> 0.5 bar
+
+### Prochaine session
+* Implémenter `Mat4.java` 
+* Tests unitaires : de toutes les méthodes de `Mat4`
+
+--- 
+
+## Session 003 - [06/04/26]
+
+**Durée** : ~2-3h
+
+**Phase** : 1 - Fondations matémathiques et physiques complétion
+
+### Ce que j'ai fait
+ * Implementer `Mat4` donc les matrices 4x4:
+     * Doubles constructeurs : nulle et un copie d'un autre matrice déjà              existante
+     * Les frabrique statiques :
+         * La matrice identité (la base pour la les prochaines matrices)
+         * Translation
+         * Scale
+         * Rotation X, Y, Z
+     * Multiplication de matrice
+     * Transformation de Vecteur en point / directions
+     * Transposée d'un matrice
+     * Inverse
+
+### Ce que j'ai appris/revu
+La moitié des méthodes de `Mat4` j'ai vu en cours sauf l'autre mais c'est pas difficile à comprendre sauf l'inverse compliqué à comprendre j'ai eu beaucoup de mal à comprendre 
+
+### Difficulté rencontré
+L'inverse, avec ces sous méthodes mineurs déterminant
+
+### Prochaine session
+RÉVISION DE PROJET !!!!
+
+---
+
+
+## Session 004 - [07/04/26]
+
+**Durée** : 2.5 h
+
+**Phase** : 1 - Révision de projet Test Unitaires plus complets avec un scénario réel
+
+### Ce que j'ai fait
+Révisé tout le projet corrigé quelques lignes, comprendre le code pour certaine partie que je n'ai pas totalement comprise essayé de l'expliqué
+
 ### Ce que j'ai appris
+Pas plus mise à part certain point spécifique comme l'albedo
 
+### Difficulté rencontré
+Aucune
 
+### Prochaine session
+Commencer la phase 2 si possible sinon révision de projet
 
+--- 
 
-
-
+## Session 005 - [07/05/26 - Jsp]
 
 
 
