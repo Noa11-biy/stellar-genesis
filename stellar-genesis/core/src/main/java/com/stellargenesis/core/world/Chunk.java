@@ -75,7 +75,7 @@ public class Chunk {
      * Retourne 0 (AIR) si hors limites.
      */
     public short getBlock(int lx, int ly, int lz){
-        if(inBounds(lx, ly, lz)) return 0;
+        if(!inBounds(lx, ly, lz)) return 0;
         return voxels[lx][ly][lz];
     }
 
@@ -89,6 +89,17 @@ public class Chunk {
 
         voxels[lx][ly][lz] = blockId;
         dirty = true;
+    }
+
+
+    /**
+    * Surcharge pratique : accepte un BlockType directement.
+    * Le WorldGenerator manipule des BlockType (logique métier),
+    * le Chunk stocke des short (optimisation mémoire).
+    * Cette méthode fait le pont entre les deux.
+    */
+    public void setBlock(int lx, int ly, int lz, BlockType type) {
+        setBlock(lx, ly, lz, (short) type.getId());
     }
 
     /**
@@ -113,6 +124,58 @@ public class Chunk {
      * Compter les blocs non-air dans le chunk.
      * Utile pour savoir si le chunk est vide (skip rendu).
      */
-    
+    public int countSolid(){
+        int count = 0;
+        for (int x = 0; x < SIZE ; x++) {
+            for (int y = 0; y < SIZE; y++) {
+                for (int z= 0; z < SIZE; z++) {
+                    if (voxels[x][y][z] != 0) count ++;
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Compter un type de bloc spécifique.
+     */
+    public int countBlock(short blockId) {
+        int count = 0;
+        for (int x = 0; x < SIZE; x++) {
+            for (int y = 0; y < SIZE; y++) {
+                for (int z = 0; z < SIZE; z++) {
+                    if (voxels[x][y][z] == blockId) count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Le chunk est-il entièrement vide ?
+     */
+    public boolean isEmpty(){
+        return countSolid() == 0;
+    }
+
+    // === ÉTAT ===
+
+    public boolean isDirty() { return dirty; }
+    public void markDirty() { dirty = true; }
+    public void markClean() { dirty = false; }
+
+    public boolean isGenerated() { return generated; }
+    public void markGenerated() { generated = true; }
+
+    // === GETTERS ===
+
+    public ChunkPos getPosition() { return position; }
+
+    /**
+     * Accès direct au tableau pour la génération.
+     * À utiliser uniquement dans le WorldGenerator.
+     */
+    public short[][][] getRawVoxels() { return voxels; }
+
 
 }
