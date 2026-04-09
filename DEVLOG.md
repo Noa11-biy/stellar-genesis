@@ -86,7 +86,7 @@
 
 
 \### Ce que j'ai fait : 
->>>>>>> 0593069 (feat: Mat4 matrices 4x4 + transformations + inverse + tests)
+feat: Mat4 matrices 4x4 + transformations + inverse + tests
 
 **Durée** : ~5-6h
 
