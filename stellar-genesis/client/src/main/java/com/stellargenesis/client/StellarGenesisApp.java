@@ -175,12 +175,6 @@ public class StellarGenesisApp extends SimpleApplication {
         blockMaterial.setBoolean("UseMaterialColors", true);
         blockMaterial.setColor("Diffuse", ColorRGBA.Gray);
         blockMaterial.setColor("Ambient", ColorRGBA.DarkGray);
-
-        // La grosse flemme sah plus tard
-        // Alternative simple sans vertex color :
-        // blockMaterial.setColor("Diffuse", ColorRGBA.Gray);
-        // blockMaterial.setColor("Ambient", ColorRGBA.DarkGray);
-        // blockMaterial.setBoolean("UseMaterialColors", true);
     }
 
     /**
