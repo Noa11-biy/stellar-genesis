@@ -1,7 +1,11 @@
 package com.stellargenesis.client;
 
 import com.jme3.app.SimpleApplication;
+import com.jme3.bullet.BulletAppState;
+import com.jme3.bullet.collision.shapes.MeshCollisionShape;
+import com.jme3.bullet.control.RigidBodyControl;
 import com.jme3.material.Material;
+import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
@@ -9,11 +13,21 @@ import com.jme3.scene.Mesh;
 import com.jme3.scene.Node;
 import com.jme3.light.DirectionalLight;
 import com.jme3.light.AmbientLight;
+import com.jme3.scene.Spatial;
 import com.jme3.system.AppSettings;
 
+import com.stellargenesis.client.player.PlayerControl;
+import com.stellargenesis.client.player.PlayerInteraction;
+import com.stellargenesis.client.ui.GameHUD;
+import com.stellargenesis.core.inventory.Inventory;
+import com.stellargenesis.core.player.MiningSystem;
 import com.stellargenesis.core.world.*;
 import com.stellargenesis.core.physics.PlanetData;
 import com.stellargenesis.core.physics.PlanetPhysics;
+
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 
 /**
  * Point d'entrée du jeu.
@@ -28,6 +42,9 @@ import com.stellargenesis.core.physics.PlanetPhysics;
 
 public class StellarGenesisApp extends SimpleApplication {
 
+    private java.awt.Robot robot;
+    private int centerX, centerY;
+
      // -- Monde --
     private  ChunkManager chunkManager;
     private WorldGenerator worldGenerator;
@@ -38,9 +55,17 @@ public class StellarGenesisApp extends SimpleApplication {
     private Material blockMaterial;      // matériau partagé par tous les blocs
     private int renderDistance = 4;      // en Chunks (4 = 64 blocs de vue)
 
-    // -- État
+    // -- État --
     private Vector3f lastUpdatePos;      // dernière position où on a mis à jour les chunks
     private static final float CHUNK_UPDATE_THRESHOLD = 8f;
+
+    // -- Joueur --
+    private PlayerControl playerControl;
+    private BulletAppState bulletAppState;
+    private PlayerInteraction playerInteraction;
+
+    // -- UI --
+    private GameHUD gameHUD;
 
     // ═══════════════════════════════════════════
     //  MAIN — Point d'entrée
@@ -51,11 +76,14 @@ public class StellarGenesisApp extends SimpleApplication {
         //Config de la fen
         AppSettings settings = new AppSettings(true);
         settings.setTitle("Stellar Genesis");
-        settings.setWidth(1280);
-        settings.setHeight(720);
+//        settings.setWidth(1280);
+//        settings.setHeight(720);
+        settings.setResolution(1920, 1080);
+        settings.setFullscreen(true);
         settings.setVSync(true);
         settings.setSamples(4);
         settings.setFrameRate(60);
+
 
         app.setSettings(settings);
         app.setShowSettings(false);
@@ -65,20 +93,87 @@ public class StellarGenesisApp extends SimpleApplication {
 
     @Override
     public void simpleInitApp() {
-        // 1. Générer les données physiques de la planète
+        // 1. Physique Bullet EN PREMIER
+        bulletAppState = new BulletAppState();
+        stateManager.attach(bulletAppState);
+
+        // 2. Générer les données physiques de la planète
         initPlanetData();
 
-        // 2. Préparer le monde
+        // 3. Appliquer la gravité (après attach, getPhysicsSpace() est dispo)
+        bulletAppState.getPhysicsSpace().setGravity(new Vector3f(0, -(float) planetData.getSurfaceGravity(), 0));
+
+        // 4. Préparer le monde
         initWorld();
-// 3. Configurer le rendu
+
+        // 5. Configurer le rendu
         initMaterial();
         initLighting();
 
-        // 4. Configurer la caméra
+        // 6. Configurer la caméra
         initCamera();
 
-        // 5. Charger les premiers chunks autour du spawn
+        // 7. Charger les premiers chunks autour du spawn
         loadInitialChunks();
+
+        flyCam.setEnabled(false);
+
+        // 8. Créer le joueur avec la gravité de la planète
+        float spawnY = findTerrainHeight(32, 32) + 3f;
+//        System.out.println("=== TERRAIN HEIGHT at (32,32): " + (spawnY - 5f));
+//        System.out.println("=== SPAWN Y: " + spawnY);
+
+        float planetGravity = (float) planetData.getSurfaceGravity();
+        playerControl = new PlayerControl(
+                rootNode, bulletAppState, cam, inputManager, planetGravity,spawnY
+        );
+
+        // Forcer la capture de la souris (empêche de sortir de la fenêtre)
+        inputManager.setCursorVisible(false);
+        mouseInput.setCursorVisible(false);
+
+        try {
+            robot = new java.awt.Robot();
+        } catch (Exception e) { e.printStackTrace(); }
+        centerX = settings.getWidth() / 2;
+        centerY = settings.getHeight() / 2;
+
+    // Dans simpleUpdate()
+        if (robot != null) {
+            // Récupérer la position de la fenêtre sur l'écran
+            java.awt.Point windowPos = new java.awt.Point(0, 0);
+            if (context instanceof com.jme3.system.lwjgl.LwjglWindow) {
+                // Recentrer la souris au milieu de la fenêtre
+                robot.mouseMove(
+                        settings.getWidth() / 2 + getContext().getSettings().getWindowXPosition(),
+                        settings.getHeight() / 2 + getContext().getSettings().getWindowYPosition()
+                );
+            }
+        }
+
+        MiningSystem miningSystem = new MiningSystem(
+                1.0,                // toolEfficiency (main nue)
+                planetData.getSurfaceGravity(), // gravité locale
+                100.0                           // stamina max
+        );
+
+        Inventory inventory = new Inventory(
+                36,
+                80.0,
+                planetData.getSurfaceGravity()
+        );
+
+        playerInteraction = new PlayerInteraction(
+                cam, worldNode, inputManager,
+                chunkManager, miningSystem, inventory
+        );
+
+
+        // 9. HUD
+        gameHUD = new GameHUD();
+        gameHUD.init(this, guiNode);
+
+        // 67
 
         System.out.println("=== STELLAR GENESIS ===");
         System.out.println("Planète : masse=" + String.format("%.2e", planetData.getMass()) + " kg");
@@ -86,32 +181,23 @@ public class StellarGenesisApp extends SimpleApplication {
         System.out.println("Température : " + String.format("%.1f", planetData.getEquilibriumTemp()) + " K");
         System.out.println("Pression : " + String.format("%.3f", planetData.getSurfacePressure()) + " bar");
 
-//        // DEBUG : cube rouge visible à l'origine
-//        com.jme3.scene.shape.Box b = new com.jme3.scene.shape.Box(5, 5, 5);
-//        Geometry testCube = new Geometry("test", b);
-//        Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-//        mat.setColor("Color", ColorRGBA.Red);
-//        testCube.setMaterial(mat);
-//        testCube.setLocalTranslation(32, 30, 32);
-//        rootNode.attachChild(testCube);
+
+//        // DEBUG : vérifier qu'un chunk contient des blocs
+//        ChunkPos testPos = new ChunkPos(0, 3, 0); // chunk qui devrait contenir du terrain
+//        Chunk testChunk = new Chunk(testPos);
+//        worldGenerator.generateChunk(testChunk);
 //
-//        System.out.println("CAM: " + cam.getLocation());
-//        System.out.println("CAM DIR: " + cam.getDirection());
+//        int solidCount = 0;
+//        for (int x = 0; x < 16; x++)
+//            for (int y = 0; y < 16; y++)
+//                for (int z = 0; z < 16; z++)
+//                    if (testChunk.getBlock(x, y, z) != 0) solidCount++;
+//
+//        System.out.println("=== DEBUG: Chunk " + testPos + " solid blocks: " + solidCount);
+//        System.out.println("=== DEBUG: terrainHeight at (0,0): " + worldGenerator.getTerrainHeight(0, 0));
+//        System.out.println("=== DEBUG: seaLevel: " + worldGenerator.getSeaLevel());
 
-        // DEBUG : vérifier qu'un chunk contient des blocs
-        ChunkPos testPos = new ChunkPos(0, 3, 0); // chunk qui devrait contenir du terrain
-        Chunk testChunk = new Chunk(testPos);
-        worldGenerator.generateChunk(testChunk);
 
-        int solidCount = 0;
-        for (int x = 0; x < 16; x++)
-            for (int y = 0; y < 16; y++)
-                for (int z = 0; z < 16; z++)
-                    if (testChunk.getBlock(x, y, z) != 0) solidCount++;
-
-        System.out.println("=== DEBUG: Chunk " + testPos + " solid blocks: " + solidCount);
-        System.out.println("=== DEBUG: terrainHeight at (0,0): " + worldGenerator.getTerrainHeight(0, 0));
-        System.out.println("=== DEBUG: seaLevel: " + worldGenerator.getSeaLevel());
     }
 
     /**
@@ -166,6 +252,8 @@ public class StellarGenesisApp extends SimpleApplication {
         blockMaterial.setBoolean("UseMaterialColors", true);
         blockMaterial.setColor("Diffuse", ColorRGBA.Gray);
         blockMaterial.setColor("Ambient", ColorRGBA.DarkGray);
+
+//        blockMaterial.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
 
         // La grosse flemme sah plus tard
         // Alternative simple sans vertex color :
@@ -233,19 +321,10 @@ public class StellarGenesisApp extends SimpleApplication {
      * Le joueur spawn au-dessus du terrain.
      */
     private void initCamera(){
-        // Vitesse de déplacement de la caméra (fly cam par défaut)
-        flyCam.setMoveSpeed(50f);
-        flyCam.setRotationSpeed(2f);
-
-//        // Position de départ : au centre, au-dessus du terrain
-//        // On trouvera la hauteur du terrain au spawn
-//        float spawnX = 0;
-//        float spawnZ = 0;
-//        float spawnY = findTerrainHeight(spawnX, spawnZ) + 5f;
-
-        cam.setLocation(new Vector3f(32, 150, 32));
-        cam.lookAt(new Vector3f(32, 128, 32), Vector3f.UNIT_Y);
-
+        flyCam.setEnabled(false);
+        inputManager.setCursorVisible(false);
+        cam.setFrustumNear(0.1f);
+        cam.setFrustumPerspective(70f, (float)cam.getWidth()/cam.getHeight(), 0.1f, 1000f);
         lastUpdatePos = cam.getLocation().clone();
     }
 
@@ -253,29 +332,27 @@ public class StellarGenesisApp extends SimpleApplication {
      * Trouve la hauteur du terrain à une position (x, z).
      * Parcourt les blocs de haut en bas jusqu'à trouver un solide.
      */
-    private float findTerrainHeight(float x, float z){
+    private float findTerrainHeight(float x, float z) {
         int ix = (int) x;
         int iz = (int) z;
 
-        // Chercher de haut en bas (chunk max → 0)
-        for (int y = Chunk.SIZE * 8; y >= 0 ; y--) {
-            ChunkPos cPos = new ChunkPos(
-                    Math.floorDiv(ix, Chunk.SIZE),
-                    Math.floorDiv(y, Chunk.SIZE),
-                    Math.floorDiv(iz, Chunk.SIZE)
-            );
+        // Forcer la génération des chunks sous le spawn (synchrone)
+        int chunkX = Math.floorDiv(ix, Chunk.SIZE);
+        int chunkZ = Math.floorDiv(iz, Chunk.SIZE);
+        for (int cy = 0; cy <= 8; cy++) {
+            chunkManager.getOrGenerate(new ChunkPos(chunkX, cy, chunkZ));
+        }
 
-            Chunk chunk = chunkManager.getChunk(cPos);
-            if (chunk != null) {
-                int localX = ((ix % Chunk.SIZE) + Chunk.SIZE) % Chunk.SIZE;
-                int localY = ((y % Chunk.SIZE) + Chunk.SIZE) % Chunk.SIZE;
-                int localZ = ((iz % Chunk.SIZE) + Chunk.SIZE) % Chunk.SIZE;
-
-                if(chunk.getBlock(localX, localY, localZ) != 0){
-                    return y + 1;
-                }
+        // Maintenant chercher de haut en bas
+        for (int y = Chunk.SIZE * 8; y >= 0; y--) {
+            short block = chunkManager.getBlock(ix, y, iz);
+            if (block != 0) {
+                System.out.println("=== TERRAIN FOUND at Y=" + y + " block=" + block);
+                return y + 1;
             }
         }
+
+        System.out.println("=== WARNING: no terrain found at (" + ix + "," + iz + ")");
         return 64f;
     }
 
@@ -294,11 +371,51 @@ public class StellarGenesisApp extends SimpleApplication {
     public void simpleUpdate(float tpf){
         Vector3f playerPos = cam.getLocation();
 
-        // Ne recalculer les chunks que si le joueur a bougé assez
         if(playerPos.distance(lastUpdatePos) > CHUNK_UPDATE_THRESHOLD){
             updateVisibleChunks(playerPos);
             lastUpdatePos = playerPos.clone();
         }
+
+        playerControl.update(tpf);
+        playerInteraction.update(tpf);
+
+        // === REMESH DES CHUNKS DIRTY ===
+        for (Spatial child : worldNode.getChildren()) {
+            Integer cx = child.getUserData("cx");
+            if (cx == null) continue;
+
+            int cy = (int) child.getUserData("cy");
+            int cz = (int) child.getUserData("cz");
+            ChunkPos pos = new ChunkPos(cx, cy, cz);
+
+            Chunk chunk = chunkManager.getChunk(pos);
+            if (chunk == null || !chunk.isDirty()) continue;
+
+            Mesh newMesh = ChunkMeshBuilder.buildMesh(chunk, chunkManager);
+
+            if (newMesh == null) {
+                RigidBodyControl rbc = child.getControl(RigidBodyControl.class);
+                if (rbc != null) bulletAppState.getPhysicsSpace().remove(rbc);
+                worldNode.detachChild(child);
+            } else {
+                ((Geometry) child).setMesh(newMesh);
+
+                RigidBodyControl oldRbc = child.getControl(RigidBodyControl.class);
+                if (oldRbc != null) {
+                    bulletAppState.getPhysicsSpace().remove(oldRbc);
+                    child.removeControl(oldRbc);
+                }
+                RigidBodyControl newRbc = new RigidBodyControl(
+                        new MeshCollisionShape(newMesh), 0f
+                );
+                child.addControl(newRbc);
+                bulletAppState.getPhysicsSpace().add(newRbc);
+            }
+
+            chunk.markClean();
+        }
+
+        gameHUD.update(playerPos, planetData);
     }
 
     /**
@@ -309,44 +426,60 @@ public class StellarGenesisApp extends SimpleApplication {
      * 3. Construire leur mesh et les ajouter à la scène
      * 4. Retirer les chunks trop loin
      */
-    private void updateVisibleChunks(Vector3f playerPos){
-        // Position du joueur en coordonnées chunk
+    private void updateVisibleChunks(Vector3f playerPos) {
         int pcx = Math.floorDiv((int) playerPos.x, Chunk.SIZE);
         int pcy = Math.floorDiv((int) playerPos.y, Chunk.SIZE);
         int pcz = Math.floorDiv((int) playerPos.z, Chunk.SIZE);
 
-        // 1. Détacher tous les anciens chunks
-        worldNode.detachAllChildren();
-
-        // 2. Parcourir tous les chunks dans le rayon de rendu
-        for (int dx = -renderDistance; dx <= renderDistance ; dx++) {
-            for (int dy = -2; dy <= 4 ; dy++) {
+        // 1. Collecter les positions qui DOIVENT être visibles
+        Set<ChunkPos> needed = new HashSet<>();
+        for (int dx = -renderDistance; dx <= renderDistance; dx++) {
+            for (int dy = -2; dy <= 4; dy++) {
                 for (int dz = -renderDistance; dz <= renderDistance; dz++) {
-
-                    ChunkPos pos = new ChunkPos(pcx + dx, pcy + dy, pcz + dz);
-
-                    // Charger/générer le chunk si nécessaire
-                    Chunk chunk = chunkManager.getOrGenerate(pos);
-                    if (chunk == null) continue;
-
-                    // Construire le mesh
-                    Mesh mesh = ChunkMeshBuilder.buildMesh(chunk, chunkManager);
-                    if (mesh == null) continue;
-
-                    // Créer le Geometry jME et le positioner
-                    Geometry geom = new Geometry("chunk_" + pos, mesh);
-                    geom.setMaterial(blockMaterial);
-
-                    // Position monde du chunk
-                    geom.setLocalTranslation(
-                            pos.x * Chunk.SIZE,
-                            pos.y * Chunk.SIZE,
-                            pos.z * Chunk.SIZE
-                    );
-
-                    worldNode.attachChild(geom);
+                    needed.add(new ChunkPos(pcx + dx, pcy + dy, pcz + dz));
                 }
             }
+        }
+
+        // 2. Retirer les chunks qui ne sont PLUS nécessaires
+        Iterator<Spatial> it = worldNode.getChildren().iterator();
+        while (it.hasNext()) {
+            Spatial child = it.next();
+            ChunkPos pos = (ChunkPos) child.getUserData("chunkPos");
+            if (pos != null && !needed.contains(pos)) {
+                RigidBodyControl rbc = child.getControl(RigidBodyControl.class);
+                if (rbc != null) bulletAppState.getPhysicsSpace().remove(rbc);
+                worldNode.detachChild(child);
+            }
+        }
+
+        // 3. Ajouter les chunks manquants
+        for (ChunkPos pos : needed) {
+            if (worldNode.getChild("chunk_" + pos) != null) continue; // déjà affiché
+
+            Chunk chunk = chunkManager.getOrGenerate(pos);
+            if (chunk == null) continue;
+
+            Mesh mesh = ChunkMeshBuilder.buildMesh(chunk, chunkManager);
+            if (mesh == null) continue;
+
+            Geometry geom = new Geometry("chunk_" + pos, mesh);
+            geom.setMaterial(blockMaterial);
+            geom.setLocalTranslation(
+                    pos.x * Chunk.SIZE,
+                    pos.y * Chunk.SIZE,
+                    pos.z * Chunk.SIZE
+            );
+//            // Stocker la position pour le nettoyage
+//            geom.setUserData("chunkPos", pos);
+
+            worldNode.attachChild(geom);
+            geom.setUserData("cx", pos.x);
+            geom.setUserData("cy", pos.y);
+            geom.setUserData("cz", pos.z);
+            RigidBodyControl rb = new RigidBodyControl(new MeshCollisionShape(mesh), 0f);
+            geom.addControl(rb);
+            bulletAppState.getPhysicsSpace().add(rb);
         }
     }
 }

@@ -31,18 +31,18 @@ public class ChunkMeshBuilder {
     // Les 4 sommets de chaque face selon la direction
     // Chaque face est un quad (2 triangles = 6 indices)
     private static final float[][][] FACE_VERTICES = {
-            // +X (droite) — face à x=1
+            // +X
             {{1,0,0}, {1,1,0}, {1,1,1}, {1,0,1}},
-            // -X (gauche) — face à x=0
+            // -X
             {{0,0,1}, {0,1,1}, {0,1,0}, {0,0,0}},
-            // +Y (haut) — face à y=1
+            // +Y
             {{0,1,0}, {0,1,1}, {1,1,1}, {1,1,0}},
-            // -Y (bas) — face à y=0
+            // -Y
             {{0,0,1}, {0,0,0}, {1,0,0}, {1,0,1}},
-            // +Z (devant) — face à z=1
-            {{0,0,1}, {1,0,1}, {1,1,1}, {0,1,1}},
-            // -Z (derrière) — face à z=0
-            {{1,0,0}, {0,0,0}, {0,1,0}, {1,1,0}}
+            // +Z
+            {{1,0,1}, {1,1,1}, {0,1,1}, {0,0,1}},
+            // -Z
+            {{0,0,0}, {0,1,0}, {1,1,0}, {1,0,0}}
     };
 
     // Normales pour chaque direction
