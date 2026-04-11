@@ -36,11 +36,15 @@ public class PlayerControl {
     private Node playerNode;
     private Camera cam;
     private InputManager inputManager;
+    private boolean sprintAllowed = true;
+    private StaminaSystem staminaSystem;
+
 
     // === Paramètres physiques ===
     private float gravity;              // m/s² de la planète
     private float walkSpeed;            // m/s, ajuste selon g
     private float jumpImpulse;          // m/s, vitesse initiale du saut
+    private float sprintMultiplier = 1.0f;
 
     // === Constantes de base (à g = 9.81) ===
     private static final float BASE_WALK_SPEED = 5.0f;      // m/s sur Terre
@@ -58,10 +62,11 @@ public class PlayerControl {
      * @param gravity gravité de surface en m/s² (ex: 9.81 pour Terre, 3.72 pour Mars)
      */
     public PlayerControl(Node rootNode, BulletAppState bulletState,
-                         Camera cam, InputManager inputManager, float gravity, float spawnY){
+                         Camera cam, InputManager inputManager, float gravity, float spawnY, StaminaSystem staminaSystem){
         this.cam = cam;
         this.inputManager = inputManager;
         this.gravity = gravity;
+        this.staminaSystem = staminaSystem;
 
         // Calculer les paramètres adaptés à la gravité
         calculatePhysicsParams();
@@ -159,6 +164,7 @@ public class PlayerControl {
                 pitch = Math.max(-1.5f, Math.min(1.5f, pitch));
                 inputManager.setCursorVisible(false);
             }
+
             @Override public void beginInput() {}
             @Override public void endInput() {}
             @Override public void onJoyAxisEvent(JoyAxisEvent evt) {}
@@ -181,8 +187,10 @@ public class PlayerControl {
             case "Right": right = isPressed; break;
             case "Sprint": sprinting = isPressed; break;
             case "Jump":
-                if (isPressed && characterControl.isOnGround()){
-                    characterControl.jump();
+                if (isPressed && characterControl.isOnGround()) {
+                    if (staminaSystem.tryJump()) {
+                        characterControl.jump();
+                    }
                 }
                 break;
         }
@@ -203,6 +211,12 @@ public class PlayerControl {
         pitch = Math.max(-1.5f, Math.min(1.5f, pitch)); // ~±85°
     };
 
+    public void setSprintAllowed(boolean allowed) {
+        this.sprintAllowed = allowed;
+        if (!allowed && sprinting) sprinting = false;
+    }
+
+
     /**
      * Appelé chaque frame depuis simpleUpdate().
      *
@@ -221,7 +235,8 @@ public class PlayerControl {
         Vector3f camDir = cam.getDirection().clone().setY(0).normalizeLocal();
         Vector3f camLeft = cam.getLeft().clone().setY(0).normalizeLocal();
 
-        float speed = sprinting ? BASE_SPRINT_SPEED : walkSpeed;
+        float speed = sprinting ? BASE_SPRINT_SPEED * sprintMultiplier : walkSpeed;
+
 
         if (forward) walkDirection.addLocal(camDir);
         if (backward) walkDirection.addLocal(camDir.negate());
@@ -241,6 +256,10 @@ public class PlayerControl {
         Vector3f eyePos = playerNode.getWorldTranslation().add(0, 1.6f, 0);
         cam.setLocation(eyePos);
         System.out.println("PlayerY=" + playerNode.getWorldTranslation().y);
+    }
+
+    public boolean isMoving() {
+        return forward || backward || left || right;
     }
 
     /**
@@ -265,4 +284,6 @@ public class PlayerControl {
     public float getJumpHeight() {
         return (jumpImpulse * jumpImpulse) / (2 * gravity);
     }
+    public void setSprintMultiplier(float m) { this.sprintMultiplier = m; }
+    public boolean isSprinting() { return sprinting; }
 }

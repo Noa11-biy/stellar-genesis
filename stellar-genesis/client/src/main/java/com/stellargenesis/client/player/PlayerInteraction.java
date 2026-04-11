@@ -17,6 +17,7 @@ import com.stellargenesis.core.world.Chunk;
 import com.stellargenesis.core.world.ChunkManager;
 import com.stellargenesis.core.world.ChunkPos;
 
+
 /**
  * Gère l'interaction joueur ↔ monde :
  * - Raycasting pour détecter le bloc visé
@@ -61,20 +62,91 @@ public class PlayerInteraction {
         setupInput(inputManager);
     }
 
-    private void setupInput(InputManager inputManager){
+    private void setupInput(InputManager inputManager) {
+        // Supprimer TOUS les mappings flyCam qui utilisent le clic droit
+        String[] flyCamMappings = {"FLYCAM_RotateDrag", "FLYCAM_Rise", "FLYCAM_Lower"};
+        for (String m : flyCamMappings) {
+            if (inputManager.hasMapping(m)) {
+                inputManager.deleteMapping(m);
+            }
+        }
+
         inputManager.addMapping("Mine", new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
         inputManager.addMapping("Place", new MouseButtonTrigger(MouseInput.BUTTON_RIGHT));
 
         inputManager.addListener((ActionListener) (name, isPressed, tpf) -> {
-            if (name.equals("Mine")){
+            System.out.println("ACTION: " + name + " pressed=" + isPressed);
+            if (name.equals("Mine")) {
                 mouseHeld = isPressed;
-                if (!isPressed){
+                if (!isPressed) {
                     miningSystem.stopMining();
                     targetBlockPos = null;
                     targetBlockType = null;
                 }
             }
+            if (name.equals("Place")) {
+                System.out.println("Place pressed=" + isPressed + " time=" + System.nanoTime());
+                if (isPressed) {
+                    placeBlock();
+                }
+            }
         }, "Mine", "Place");
+    }
+
+    private void placeBlock() {
+        RaycastResult hit = raycast();
+        System.out.println("placeBlock: hit=" + (hit != null));
+        if (hit == null || hit.adjacentBlockPos == null) {
+            System.out.println("placeBlock: STOP - hit null ou adjacentPos null");
+            return;
+        }
+
+        System.out.println("placeBlock: adjacentPos=" + hit.adjacentBlockPos);
+
+        BlockType toPlace = BlockType.STONE;
+
+        // removeItem retourne le nombre retiré (int)
+        int removed = inventory.removeItem(toPlace, 1);
+        if (removed == 0) {
+            System.out.println("placeBlock: removed=" + removed);
+            return; // pas assez en inventaire
+        }
+
+        int bx = (int) hit.adjacentBlockPos.x;
+        int by = (int) hit.adjacentBlockPos.y;
+        int bz = (int) hit.adjacentBlockPos.z;
+
+        ChunkPos chunkPos = ChunkPos.fromWorld(bx, by, bz);
+        Chunk chunk = chunkManager.getChunk(chunkPos);
+        System.out.println("placeBlock: chunk=" + (chunk != null) + " pos=" + chunkPos);
+        if (chunk == null) {
+            System.out.println("placeBlock: STOP - chunk null");
+            return;
+        }
+
+        int lx = bx & 15;
+        int ly = by & 15;
+        int lz = bz & 15;
+
+        int existing = chunk.getBlock(lx, ly, lz);
+        System.out.println("placeBlock: existing block at local(" + lx + "," + ly + "," + lz + ")=" + existing);
+        if (existing != 0) {
+            System.out.println("placeBlock: STOP - bloc déjà présent");
+            return;
+        }
+
+        if (chunk.getBlock(lx, ly, lz) != 0) return;
+
+        chunk.setBlock(lx, ly, lz, (short) toPlace.getId());
+        System.out.println("PLACED! Chunk dirty: " + chunk.isDirty());
+
+        // Marquer les voisins dirty si placement au bord
+        if (lx == 0)               markDirty(chunkPos.x - 1, chunkPos.y, chunkPos.z);
+        if (lx == Chunk.SIZE - 1)   markDirty(chunkPos.x + 1, chunkPos.y, chunkPos.z);
+        if (ly == 0)               markDirty(chunkPos.x, chunkPos.y - 1, chunkPos.z);
+        if (ly == Chunk.SIZE - 1)   markDirty(chunkPos.x, chunkPos.y + 1, chunkPos.z);
+        if (lz == 0)               markDirty(chunkPos.x, chunkPos.y, chunkPos.z - 1);
+        if (lz == Chunk.SIZE - 1)   markDirty(chunkPos.x, chunkPos.y, chunkPos.z + 1);
     }
 
     /**
@@ -203,7 +275,11 @@ public class PlayerInteraction {
         // 1. Supprimer le bloc
         hit.chunk.setBlock(hit.localX, hit.localY, hit.localZ, (short) 0);
 
-        // 2. Drop → inventaire
+        // 2. Marquer les chunks voisins comme dirty si le bloc est au bord
+        markNeighborsDirty(hit);
+
+
+        // 3. Drop → inventaire
 
         BlockType dropType = BlockType.fromId(hit.blockType.getDropId());
         if (dropType != BlockType.AIR) {
@@ -218,6 +294,35 @@ public class PlayerInteraction {
         targetBlockPos = null;
         targetBlockType = null;
     }
+
+    /**
+     * Si le bloc modifié est sur le bord du chunk (local 0 ou 15),
+     * le chunk voisin doit aussi recalculer son mesh.
+     *
+     * Pourquoi ? Parce que le mesh du voisin regarde les blocs de CE chunk
+     * pour décider quelles faces dessiner. Si on casse un bloc ici,
+     * le voisin a maintenant une face exposée qu'il ne dessinait pas.
+     */
+    private void markNeighborsDirty(RaycastResult hit) {
+        int cx = hit.chunk.getPosition().x;
+        int cy = hit.chunk.getPosition().y;
+        int cz = hit.chunk.getPosition().z;
+
+        if (hit.localX == 0)               markDirty(cx - 1, cy, cz);
+        if (hit.localX == Chunk.SIZE - 1)   markDirty(cx + 1, cy, cz);
+        if (hit.localY == 0)               markDirty(cx, cy - 1, cz);
+        if (hit.localY == Chunk.SIZE - 1)   markDirty(cx, cy + 1, cz);
+        if (hit.localZ == 0)               markDirty(cx, cy, cz - 1);
+        if (hit.localZ == Chunk.SIZE - 1)   markDirty(cx, cy, cz + 1);
+    }
+
+    private void markDirty(int cx, int cy, int cz) {
+        Chunk neighbor = chunkManager.getChunk(new ChunkPos(cx, cy, cz));
+        if (neighbor != null) {
+            neighbor.markDirty();
+        }
+    }
+
 
 
     // === Getters pour le HUD ===

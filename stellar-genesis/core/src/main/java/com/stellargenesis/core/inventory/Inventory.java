@@ -24,6 +24,7 @@ public class Inventory {
     private final double carryFactor;
     private double localGravity;
 
+
     public Inventory(int size, double playerMass, double localGravity){
         this.size = size;
         this.slots = new ItemStack[size];
@@ -69,37 +70,29 @@ public class Inventory {
      * Ajouter des items. Vérifie le poids avant.
      * Retourne le nombre d'items qui n'ont pas pu rentrer.
      */
-    public int addItem(BlockType type, int amount){
-        int remaining = amount;
+    public int addItem(BlockType type, int quantity) {
+        for (int i = 0; i < quantity; i++) {
+            double oneItemWeight = type.getBlockMass() * ItemStack.ITEM_VOLUME * localGravity;
 
-        while(remaining > 0){
-            //Vérifie si un item de plus rentre en poids
-            double oneItemWeight = type.getBlockMass() * 0.01 * localGravity;
-            if (oneItemWeight > getRemainingWeight()) break;
-
-            //Chercher un stack existant du même type
-            int slot = findStackOf(type);
-
-            //Sinon chercher un slot vide
-            if(slot == -1) slot = findEmptySlot();
-
-            //Plus de place
-            if(slot == -1) break;
-
-            // Créer le stack si vide
-            if(slots[slot] == null){
-                slots[slot] = new ItemStack(type, 0);
+            // Utiliser les méthodes existantes au lieu de champs inexistants
+            if (getCurrentWeight() + oneItemWeight > getMaxWeight()) {
+                return quantity - i;
             }
 
-            //Ajouter un par un (Contrôle poids par item)
-            int surplus = slots[slot].add(1);
-            if (surplus == 0){
-                remaining --;
+            // Chercher un stack existant via la méthode interne
+            int stackIndex = findStackOf(type);
+            if (stackIndex != -1) {
+                slots[stackIndex].add(1);
             } else {
-                break;
+                // Chercher un slot vide
+                int emptyIndex = findEmptySlot();
+                if (emptyIndex == -1) {
+                    return quantity - i; // plus de slots
+                }
+                slots[emptyIndex] = new ItemStack(type, 1);
             }
         }
-        return remaining;
+        return 0;
     }
 
     // === RETRAIT ===
@@ -123,6 +116,7 @@ public class Inventory {
         }
         return amount - toRemove;
     }
+
 
     /**
      * Compter le total d'un type dans l'inventaire.

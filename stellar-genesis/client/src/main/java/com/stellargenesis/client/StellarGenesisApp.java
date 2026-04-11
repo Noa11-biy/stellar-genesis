@@ -4,6 +4,7 @@ import com.jme3.app.SimpleApplication;
 import com.jme3.bullet.BulletAppState;
 import com.jme3.bullet.collision.shapes.MeshCollisionShape;
 import com.jme3.bullet.control.RigidBodyControl;
+import com.jme3.input.KeyInput;
 import com.jme3.material.Material;
 import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
@@ -18,7 +19,11 @@ import com.jme3.system.AppSettings;
 
 import com.stellargenesis.client.player.PlayerControl;
 import com.stellargenesis.client.player.PlayerInteraction;
+import com.stellargenesis.client.player.StaminaSystem;
+import com.stellargenesis.client.ui.Crosshair;
 import com.stellargenesis.client.ui.GameHUD;
+import com.stellargenesis.client.ui.MiningBar;
+import com.stellargenesis.client.ui.StaminaBar;
 import com.stellargenesis.core.inventory.Inventory;
 import com.stellargenesis.core.player.MiningSystem;
 import com.stellargenesis.core.world.*;
@@ -63,9 +68,14 @@ public class StellarGenesisApp extends SimpleApplication {
     private PlayerControl playerControl;
     private BulletAppState bulletAppState;
     private PlayerInteraction playerInteraction;
+    private StaminaSystem staminaSystem;
+
 
     // -- UI --
     private GameHUD gameHUD;
+    private Crosshair crosshair;
+    private StaminaBar staminaBar;
+    private MiningBar miningBar;
 
     // ═══════════════════════════════════════════
     //  MAIN — Point d'entrée
@@ -76,10 +86,10 @@ public class StellarGenesisApp extends SimpleApplication {
         //Config de la fen
         AppSettings settings = new AppSettings(true);
         settings.setTitle("Stellar Genesis");
-//        settings.setWidth(1280);
-//        settings.setHeight(720);
-        settings.setResolution(1920, 1080);
-        settings.setFullscreen(true);
+        settings.setWidth(1280);
+        settings.setHeight(720);
+//        settings.setResolution(1920, 1080);
+//        settings.setFullscreen(true);
         settings.setVSync(true);
         settings.setSamples(4);
         settings.setFrameRate(60);
@@ -93,6 +103,11 @@ public class StellarGenesisApp extends SimpleApplication {
 
     @Override
     public void simpleInitApp() {
+        // 0. Désactiver flyCam IMMÉDIATEMENT
+        flyCam.setEnabled(false);
+        flyCam.setDragToRotate(false);
+        inputManager.deleteMapping("FLYCAM_RotateDrag");
+
         // 1. Physique Bullet EN PREMIER
         bulletAppState = new BulletAppState();
         stateManager.attach(bulletAppState);
@@ -116,16 +131,15 @@ public class StellarGenesisApp extends SimpleApplication {
         // 7. Charger les premiers chunks autour du spawn
         loadInitialChunks();
 
-        flyCam.setEnabled(false);
 
         // 8. Créer le joueur avec la gravité de la planète
         float spawnY = findTerrainHeight(32, 32) + 3f;
-//        System.out.println("=== TERRAIN HEIGHT at (32,32): " + (spawnY - 5f));
-//        System.out.println("=== SPAWN Y: " + spawnY);
+
+        staminaSystem = new StaminaSystem(100.0, planetData.getSurfaceGravity());
 
         float planetGravity = (float) planetData.getSurfaceGravity();
         playerControl = new PlayerControl(
-                rootNode, bulletAppState, cam, inputManager, planetGravity,spawnY
+                rootNode, bulletAppState, cam, inputManager, planetGravity,spawnY, staminaSystem
         );
 
         // Forcer la capture de la souris (empêche de sortir de la fenêtre)
@@ -162,6 +176,9 @@ public class StellarGenesisApp extends SimpleApplication {
                 80.0,
                 planetData.getSurfaceGravity()
         );
+        inventory.addItem(BlockType.STONE, 64);
+        int notAdded = inventory.addItem(BlockType.STONE, 64);
+        System.out.println("STONE ajoutés: " + (64 - notAdded) + " / refusés: " + notAdded);
 
         playerInteraction = new PlayerInteraction(
                 cam, worldNode, inputManager,
@@ -172,31 +189,18 @@ public class StellarGenesisApp extends SimpleApplication {
         // 9. HUD
         gameHUD = new GameHUD();
         gameHUD.init(this, guiNode);
-
-        // 67
+        crosshair = new Crosshair();
+        crosshair.initCrosshair(assetManager, guiNode, cam);
+        staminaBar = new StaminaBar();
+        staminaBar.init(guiNode, assetManager);
+        miningBar = new MiningBar();
+        miningBar.init(guiNode, assetManager, cam);
 
         System.out.println("=== STELLAR GENESIS ===");
         System.out.println("Planète : masse=" + String.format("%.2e", planetData.getMass()) + " kg");
         System.out.println("Gravité : " + String.format("%.2f", planetData.getSurfaceGravity()) + " m/s²");
         System.out.println("Température : " + String.format("%.1f", planetData.getEquilibriumTemp()) + " K");
         System.out.println("Pression : " + String.format("%.3f", planetData.getSurfacePressure()) + " bar");
-
-
-//        // DEBUG : vérifier qu'un chunk contient des blocs
-//        ChunkPos testPos = new ChunkPos(0, 3, 0); // chunk qui devrait contenir du terrain
-//        Chunk testChunk = new Chunk(testPos);
-//        worldGenerator.generateChunk(testChunk);
-//
-//        int solidCount = 0;
-//        for (int x = 0; x < 16; x++)
-//            for (int y = 0; y < 16; y++)
-//                for (int z = 0; z < 16; z++)
-//                    if (testChunk.getBlock(x, y, z) != 0) solidCount++;
-//
-//        System.out.println("=== DEBUG: Chunk " + testPos + " solid blocks: " + solidCount);
-//        System.out.println("=== DEBUG: terrainHeight at (0,0): " + worldGenerator.getTerrainHeight(0, 0));
-//        System.out.println("=== DEBUG: seaLevel: " + worldGenerator.getSeaLevel());
-
 
     }
 
@@ -252,14 +256,6 @@ public class StellarGenesisApp extends SimpleApplication {
         blockMaterial.setBoolean("UseMaterialColors", true);
         blockMaterial.setColor("Diffuse", ColorRGBA.Gray);
         blockMaterial.setColor("Ambient", ColorRGBA.DarkGray);
-
-//        blockMaterial.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
-
-        // La grosse flemme sah plus tard
-        // Alternative simple sans vertex color :
-        // blockMaterial.setColor("Diffuse", ColorRGBA.Gray);
-        // blockMaterial.setColor("Ambient", ColorRGBA.DarkGray);
-        // blockMaterial.setBoolean("UseMaterialColors", true);
     }
 
     /**
@@ -368,18 +364,59 @@ public class StellarGenesisApp extends SimpleApplication {
     // ═══════════════════════════════════════════
 
     @Override
-    public void simpleUpdate(float tpf){
+    public void simpleUpdate(float tpf) {
         Vector3f playerPos = cam.getLocation();
 
-        if(playerPos.distance(lastUpdatePos) > CHUNK_UPDATE_THRESHOLD){
+        // -- Chunks --
+        if (playerPos.distance(lastUpdatePos) > CHUNK_UPDATE_THRESHOLD) {
             updateVisibleChunks(playerPos);
             lastUpdatePos = playerPos.clone();
         }
 
+        // -- Joueur --
         playerControl.update(tpf);
         playerInteraction.update(tpf);
 
-        // === REMESH DES CHUNKS DIRTY ===
+        // -- Stamina --
+        boolean sprinting = playerControl.isSprinting();
+        boolean mining = playerInteraction.isMining();
+        boolean resting = !sprinting && !mining;
+
+        StaminaSystem.Activity activity;
+        if (sprinting && staminaSystem.canSprint()) {
+            activity = StaminaSystem.Activity.SPRINT;
+        } else if (mining) {
+            activity = StaminaSystem.Activity.WALK;
+        } else {
+            activity = StaminaSystem.Activity.IDLE;
+        }
+
+        staminaSystem.update(tpf, activity);
+
+        // Sprint bloqué si exhausted
+        if (!staminaSystem.canSprint()) {
+            playerControl.setSprintAllowed(false);
+            playerControl.setSprintMultiplier(1.0f);
+        } else {
+            playerControl.setSprintAllowed(true);
+            if (sprinting) {
+                playerControl.setSprintMultiplier(1.8f);
+            } else {
+                playerControl.setSprintMultiplier(1.0f);
+            }
+        }
+
+        // -- UI --
+        staminaBar.update((float) staminaSystem.getPercent());
+
+        if (playerInteraction.isMining()) {
+            miningBar.show();
+            miningBar.update((float) playerInteraction.getMiningProgress());
+        } else {
+            miningBar.hide();
+        }
+
+        // -- Remesh chunks dirty --
         for (Spatial child : worldNode.getChildren()) {
             Integer cx = child.getUserData("cx");
             if (cx == null) continue;

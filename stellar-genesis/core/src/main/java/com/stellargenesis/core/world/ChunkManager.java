@@ -94,7 +94,7 @@ public class ChunkManager {
     private void requestChunksAround(ChunkPos center){
         for (int dx = -renderDistance; dx <= renderDistance; dx++) {
             for (int dy = -renderDistance; dy <= renderDistance; dy++) {
-                for (int dz = -renderDistance; dz < renderDistance; dz++) {
+                for (int dz = -renderDistance; dz <= renderDistance; dz++) {
                     ChunkPos pos = new ChunkPos(
                             center.x + dx,
                             center.y + dy,

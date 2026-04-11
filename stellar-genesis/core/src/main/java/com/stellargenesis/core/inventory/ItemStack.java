@@ -16,6 +16,7 @@ public class ItemStack {
     private BlockType type;
     private int quantity;
     private final int maxStack;
+    public static final double ITEM_VOLUME = 0.0002;
 
     public ItemStack(BlockType type, int quantity){
         this.type = type;
@@ -38,14 +39,14 @@ public class ItemStack {
      * Donc : m_item = densité × 0.01
      */
     public double getTotalMass(){
-        return type.getBlockMass() * 0.01 * quantity;
+        return type.getBlockMass() * ITEM_VOLUME * quantity;
     }
 
     /**
      * Masse d'un seul item en kg.
      */
     public double getUnitMass(){
-        return type.getBlockMass() * 0.01;
+        return type.getBlockMass() * ITEM_VOLUME;
     }
 
     /**
