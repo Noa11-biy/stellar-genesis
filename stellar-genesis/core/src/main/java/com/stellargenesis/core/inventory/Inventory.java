@@ -159,6 +159,33 @@ public class Inventory {
         return -1;
     }
 
+    public void swapSlots(int slotA, int slotB) {
+        if (slotA < 0 || slotA >= size || slotB < 0 || slotB >= size) return;
+
+        ItemStack a = slots[slotA];
+        ItemStack b = slots[slotB];
+
+        // Même type → fusionner
+        if (a != null && b != null && a.getType() == b.getType()) {
+            int maxStack = a.getMaxStack();
+            int total = a.getQuantity() + b.getQuantity();
+
+            if (total <= maxStack) {
+                b.add(a.getQuantity());
+                slots[slotA] = null;
+            } else {
+                int surplus = total - maxStack;
+                b.add(maxStack - b.getQuantity());
+                // Recréer a avec le surplus
+                slots[slotA] = new ItemStack(a.getType(), surplus);
+            }
+        } else {
+            // Swap simple
+            slots[slotA] = b;
+            slots[slotB] = a;
+        }
+    }
+
     // === GETTERS ===
     public ItemStack getSlot(int index) { return slots[index]; }
     public int getSize() { return size; }

@@ -20,10 +20,9 @@ import com.jme3.system.AppSettings;
 import com.stellargenesis.client.player.PlayerControl;
 import com.stellargenesis.client.player.PlayerInteraction;
 import com.stellargenesis.client.player.StaminaSystem;
-import com.stellargenesis.client.ui.Crosshair;
-import com.stellargenesis.client.ui.GameHUD;
-import com.stellargenesis.client.ui.MiningBar;
-import com.stellargenesis.client.ui.StaminaBar;
+import com.stellargenesis.client.render.DayNightCycle;
+import com.stellargenesis.client.render.SkyManager;
+import com.stellargenesis.client.ui.*;
 import com.stellargenesis.core.inventory.Inventory;
 import com.stellargenesis.core.player.MiningSystem;
 import com.stellargenesis.core.world.*;
@@ -69,6 +68,7 @@ public class StellarGenesisApp extends SimpleApplication {
     private BulletAppState bulletAppState;
     private PlayerInteraction playerInteraction;
     private StaminaSystem staminaSystem;
+    private Inventory inventory;
 
 
     // -- UI --
@@ -76,6 +76,13 @@ public class StellarGenesisApp extends SimpleApplication {
     private Crosshair crosshair;
     private StaminaBar staminaBar;
     private MiningBar miningBar;
+    private InventoryScreen invScreen;
+
+    // -- Rendu --
+    private SkyManager skyManager;
+    private DayNightCycle dayNightCycle;
+    private DirectionalLight sunLight;
+    private AmbientLight ambientLight;
 
     // ═══════════════════════════════════════════
     //  MAIN — Point d'entrée
@@ -125,6 +132,16 @@ public class StellarGenesisApp extends SimpleApplication {
         initMaterial();
         initLighting();
 
+        // 5b. Skybox
+        skyManager = new SkyManager();
+        skyManager.init(assetManager, rootNode, planetData);
+
+        // 5c. Cycle jour/nuit
+        dayNightCycle = new DayNightCycle();
+        dayNightCycle.init(planetData, sunLight, ambientLight, skyManager);
+        // Accélérer pour tester (10× plus vite), enlève ça après
+        dayNightCycle.setTimeScale(10f);
+
         // 6. Configurer la caméra
         initCamera();
 
@@ -171,7 +188,7 @@ public class StellarGenesisApp extends SimpleApplication {
                 100.0                           // stamina max
         );
 
-        Inventory inventory = new Inventory(
+        inventory = new Inventory(
                 36,
                 80.0,
                 planetData.getSurfaceGravity()
@@ -195,6 +212,10 @@ public class StellarGenesisApp extends SimpleApplication {
         staminaBar.init(guiNode, assetManager);
         miningBar = new MiningBar();
         miningBar.init(guiNode, assetManager, cam);
+        invScreen = new InventoryScreen(assetManager, guiNode, cam);
+        invScreen.build(inventory.getSize()); // 40 slots
+        playerControl.setInventory(inventory);
+        playerControl.setInventoryScreen(invScreen);
 
         System.out.println("=== STELLAR GENESIS ===");
         System.out.println("Planète : masse=" + String.format("%.2e", planetData.getMass()) + " kg");
@@ -263,19 +284,14 @@ public class StellarGenesisApp extends SimpleApplication {
      * La direction et la couleur dépendent du type spectral de l'étoile.
      */
     private void initLighting(){
-        // Lumière directionnelle = le "soleil"
-        DirectionalLight sun = new DirectionalLight();
-        sun.setDirection(new Vector3f(-0.5f, -1f, -0.5f).normalizeLocal());
+        sunLight = new DirectionalLight();
+        sunLight.setDirection(new Vector3f(-0.5f, -1f, -0.3f).normalizeLocal());
+        sunLight.setColor(ColorRGBA.White);
+        rootNode.addLight(sunLight);
 
-        // Couleur selon le type spectral de l'étoile
-        // Soleil (G2) = lumière blanche légèrement jaune
-        sun.setColor(getStarLightColor(planetData.getStarTemperature()));
-        rootNode.addLight(sun);
-
-        // Lumière ambiante = éclairage minimum dans les ombres
-        AmbientLight ambient = new AmbientLight();
-        ambient.setColor(ColorRGBA.White.mult(0.3f));
-        rootNode.addLight(ambient);
+        ambientLight = new AmbientLight();
+        ambientLight.setColor(new ColorRGBA(0.3f, 0.3f, 0.3f, 1f));
+        rootNode.addLight(ambientLight);
     }
 
     /**
@@ -366,6 +382,12 @@ public class StellarGenesisApp extends SimpleApplication {
     @Override
     public void simpleUpdate(float tpf) {
         Vector3f playerPos = cam.getLocation();
+        // -- Skybox suit la caméra --
+        skyManager.update(cam.getLocation());
+        // -- Cycle jour/nuit --
+//        dayNightCycle.setTimeOfDay(0.0f);  // midi
+//        dayNightCycle.setTimeScale(0f);     // temps gelé
+        dayNightCycle.update(tpf);
 
         // -- Chunks --
         if (playerPos.distance(lastUpdatePos) > CHUNK_UPDATE_THRESHOLD) {
@@ -408,6 +430,10 @@ public class StellarGenesisApp extends SimpleApplication {
 
         // -- UI --
         staminaBar.update((float) staminaSystem.getPercent());
+        if (playerControl.isInventoryOpen()) {
+            invScreen.refresh(inventory);
+            return; // bloquer le mouvement
+        }
 
         if (playerInteraction.isMining()) {
             miningBar.show();

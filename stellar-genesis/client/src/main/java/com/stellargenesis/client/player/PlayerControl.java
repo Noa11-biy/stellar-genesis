@@ -6,14 +6,13 @@ import com.jme3.input.InputManager;
 import com.jme3.input.KeyInput;
 import com.jme3.input.MouseInput;
 import com.jme3.input.RawInputListener;
-import com.jme3.input.controls.ActionListener;
-import com.jme3.input.controls.AnalogListener;
-import com.jme3.input.controls.KeyTrigger;
-import com.jme3.input.controls.MouseAxisTrigger;
+import com.jme3.input.controls.*;
 import com.jme3.input.event.*;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Node;
+import com.stellargenesis.client.ui.InventoryScreen;
+import com.stellargenesis.core.inventory.Inventory;
 
 /**
  * Contrôle du joueur avec physique réaliste.
@@ -38,6 +37,7 @@ public class PlayerControl {
     private InputManager inputManager;
     private boolean sprintAllowed = true;
     private StaminaSystem staminaSystem;
+    private Inventory inventory;
 
 
     // === Paramètres physiques ===
@@ -55,8 +55,12 @@ public class PlayerControl {
     // === État du joueur ===
     private boolean forward, backward, left, right;
     private boolean sprinting;
+    private boolean inventoryOpen = false;
     private float yaw = 0;      // rotation horizontale (gauche/droite)
     private float pitch = 0;    // rotation verticale (haut/bas)
+
+    private InventoryScreen inventoryScreen;
+
 
     /**
      * @param gravity gravité de surface en m/s² (ex: 9.81 pour Terre, 3.72 pour Mars)
@@ -148,15 +152,18 @@ public class PlayerControl {
         inputManager.addMapping("Right", new KeyTrigger(KeyInput.KEY_D));
         inputManager.addMapping("Jump", new KeyTrigger(KeyInput.KEY_SPACE));
         inputManager.addMapping("Sprint", new KeyTrigger(KeyInput.KEY_LSHIFT));
+        inputManager.addMapping("Inventory", new KeyTrigger(KeyInput.KEY_TAB));
+        inputManager.addMapping("InventoryClick", new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
 
         // Listener pour les touches (pressed/released)
         inputManager.addListener(actionListener,
-                "Forward", "Backward", "Left", "Right", "Jump", "Sprint");
+                "Forward", "Backward", "Left", "Right", "Jump", "Sprint", "Inventory");
 
         // === SOURIS — RawInputListener (capture les deltas bruts) ===
         inputManager.addRawInputListener(new RawInputListener() {
             @Override
             public void onMouseMotionEvent(MouseMotionEvent evt) {
+                if (inventoryOpen) return;
                 float dx = evt.getDX();
                 float dy = evt.getDY();
                 yaw   -= dx * MOUSE_SENSITIVITY * 0.002f;
@@ -193,6 +200,22 @@ public class PlayerControl {
                     }
                 }
                 break;
+            case "Inventory":
+                if (isPressed) toggleInventory();
+                break;
+
+            case "InventoryClick":
+                if (inventoryOpen && inventoryScreen != null) {
+                    com.jme3.math.Vector2f pos = inputManager.getCursorPosition();
+                    if (isPressed) {
+                        // Bouton enfoncé → démarrer drag
+                        inventoryScreen.onMouseDown(pos.x, pos.y, inventory);
+                    } else {
+                        // Bouton relâché → terminer drag (drop)
+                        inventoryScreen.onMouseUp(pos.x, pos.y, inventory);
+                    }
+                }
+                break;
         }
     };
 
@@ -214,6 +237,19 @@ public class PlayerControl {
     public void setSprintAllowed(boolean allowed) {
         this.sprintAllowed = allowed;
         if (!allowed && sprinting) sprinting = false;
+    }
+
+    public void setInventoryScreen(InventoryScreen screen) {
+        this.inventoryScreen = screen;
+    }
+
+
+    private void toggleInventory() {
+        inventoryOpen = !inventoryOpen;
+        inputManager.setCursorVisible(inventoryOpen);
+        if (inventoryScreen != null) {
+            inventoryScreen.toggle();
+        }
     }
 
 
@@ -256,6 +292,11 @@ public class PlayerControl {
         Vector3f eyePos = playerNode.getWorldTranslation().add(0, 1.6f, 0);
         cam.setLocation(eyePos);
         System.out.println("PlayerY=" + playerNode.getWorldTranslation().y);
+
+        if (inventoryOpen && inventoryScreen != null && inventoryScreen.isDragging()) {
+            com.jme3.math.Vector2f mouse = inputManager.getCursorPosition();
+            inventoryScreen.onMouseMove(mouse.x, mouse.y);
+        }
     }
 
     public boolean isMoving() {
@@ -277,6 +318,10 @@ public class PlayerControl {
         return new Vector3f(x, y, z).normalizeLocal();
     }
 
+    public void setInventory(Inventory inv) {
+        this.inventory = inv;
+    }
+
     // === Getters pour le HUD futur ===
     public Vector3f getPosition() { return playerNode.getWorldTranslation(); }
     public float getGravity() { return gravity; }
@@ -286,4 +331,5 @@ public class PlayerControl {
     }
     public void setSprintMultiplier(float m) { this.sprintMultiplier = m; }
     public boolean isSprinting() { return sprinting; }
+    public boolean isInventoryOpen() { return inventoryOpen; }
 }

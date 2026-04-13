@@ -46,6 +46,7 @@ public class PlanetData {
     private final double rotationPeriod;        // secondes (durée d'un jour)
     private final double axialTilt;             // radians (inclinaison de l'axe)
     private final double albedo;                // 0.0 à 1.0 (fraction de lumière réfléchie)
+    private double rotationPeriodHours = 24.0; // par défaut comme la Terre
 
     // Étoile parente
     private final double starMass;             // kg
@@ -141,7 +142,7 @@ public class PlanetData {
         //   Mars  :  5 027 m/s
         //   Lune  :  2 376 m/s
         this.escapeVelocity = Math.sqrt(2.0 * PhysicsConstants.G * mass / radius);
-// ============================================
+        // ============================================
         // CALCUL 3 : Flux stellaire à la distance de la planète
         // ============================================
         // F = L★ / (4π × d²)
@@ -387,6 +388,8 @@ public class PlanetData {
     public double getOrbitalPeriod() { return orbitalPeriod; }
     public double getAtmosphereScaleHeight() { return atmosphereScaleHeight; }
     public double getLapseRate() { return lapseRate; }
+    public double getRotationPeriodHours() { return rotationPeriodHours; }
+    public void setRotationPeriodHours(double h) { this.rotationPeriodHours = h; }
 
 
     @Override
