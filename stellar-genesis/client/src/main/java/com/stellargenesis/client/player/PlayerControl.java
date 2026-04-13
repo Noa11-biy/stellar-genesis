@@ -291,7 +291,7 @@ public class PlayerControl {
         // On ajoute 1.7 pour les yeux
         Vector3f eyePos = playerNode.getWorldTranslation().add(0, 1.6f, 0);
         cam.setLocation(eyePos);
-        System.out.println("PlayerY=" + playerNode.getWorldTranslation().y);
+//        System.out.println("PlayerY=" + playerNode.getWorldTranslation().y);
 
         if (inventoryOpen && inventoryScreen != null && inventoryScreen.isDragging()) {
             com.jme3.math.Vector2f mouse = inputManager.getCursorPosition();

@@ -106,7 +106,7 @@ public class DayNightCycle {
      * @param tpf temps écoulé depuis la dernière frame (secondes)
      */
     public void update(float tpf) {
-        System.out.println("day=" + dayDurationSeconds + " scale=" + timeScale);
+//        System.out.println("day=" + dayDurationSeconds + " scale=" + timeScale);
         // === 1. Avancer le temps ===
         // timeOfDay va de 0 à 1 (un cycle complet)
         // 0.0  = midi
@@ -152,7 +152,7 @@ public class DayNightCycle {
         ColorRGBA skyColor = calculateSkyColorForTime(sunHeight, sunIntensity);
         skyManager.setSkyColor(skyColor);
 
-        System.out.println("timeOfDay=" + timeOfDay + " sunHeight=" + FastMath.sin(FastMath.TWO_PI * timeOfDay + FastMath.HALF_PI));
+//        System.out.println("timeOfDay=" + timeOfDay + " sunHeight=" + FastMath.sin(FastMath.TWO_PI * timeOfDay + FastMath.HALF_PI));
     }
 
     /**

@@ -17,6 +17,8 @@ import com.jme3.light.AmbientLight;
 import com.jme3.scene.Spatial;
 import com.jme3.system.AppSettings;
 
+import com.stellargenesis.client.audio.OSTManager;
+import com.stellargenesis.client.audio.SFXManager;
 import com.stellargenesis.client.player.PlayerControl;
 import com.stellargenesis.client.player.PlayerInteraction;
 import com.stellargenesis.client.player.StaminaSystem;
@@ -84,6 +86,10 @@ public class StellarGenesisApp extends SimpleApplication {
     private DirectionalLight sunLight;
     private AmbientLight ambientLight;
 
+    // -- Audio --                          // ← AJOUT 1
+    private OSTManager ostManager;
+//    private SFXManager sfxManager;
+
     // ═══════════════════════════════════════════
     //  MAIN — Point d'entrée
     // ═══════════════════════════════════════════
@@ -93,8 +99,8 @@ public class StellarGenesisApp extends SimpleApplication {
         //Config de la fen
         AppSettings settings = new AppSettings(true);
         settings.setTitle("Stellar Genesis");
-        settings.setWidth(1280);
-        settings.setHeight(720);
+        settings.setWidth(1920);
+        settings.setHeight(1080);
 //        settings.setResolution(1920, 1080);
 //        settings.setFullscreen(true);
         settings.setVSync(true);
@@ -216,6 +222,48 @@ public class StellarGenesisApp extends SimpleApplication {
         invScreen.build(inventory.getSize()); // 40 slots
         playerControl.setInventory(inventory);
         playerControl.setInventoryScreen(invScreen);
+
+        // 10. Audio
+        ostManager = new OSTManager(assetManager, rootNode);
+        // Exploration
+        ostManager.registerCategory("exploration", 0.4f,
+                "Sounds/OST/exploration/Crossing_The_Last_Frontier.ogg",
+                "Sounds/OST/exploration/Under_A_Cold_Sun.ogg"
+//                "Sounds/OST/exploration/wandering_light.ogg",
+//                "Sounds/OST/exploration/echoes_beneath.ogg"
+        );
+
+        // Combat
+//        ostManager.registerCategory("combat", 0.6f,
+//                "Sounds/OST/combat/iron_siege.ogg",
+//                "Sounds/OST/combat/swarm_incoming.ogg",
+//                "Sounds/OST/combat/last_stand.ogg"
+//        );
+
+        // Fabrique
+//        ostManager.registerCategory("factory", 0.3f,
+//                "Sounds/OST/factory/gears_and_gravity.ogg",
+//                "Sounds/OST/factory/assembly_line.ogg",
+//                "Sounds/OST/factory/molten_core.ogg"
+//        );
+
+        // Espace
+//        ostManager.registerCategory("space", 0.5f,
+//                "Sounds/OST/space/void_between_stars.ogg",
+//                "Sounds/OST/space/orbital_drift.ogg",
+//                "Sounds/OST/space/stellar_wind.ogg"
+//        );
+//
+//        // Menu
+//        ostManager.registerCategory("menu", 0.4f,
+//                "Sounds/OST/menu/genesis_theme.ogg",
+//                "Sounds/OST/menu/new_dawn.ogg"
+//        );
+//        sfxManager = new SFXManager(assetManager, rootNode);
+        System.out.println("=== AVANT ostManager.playCategory ===");
+        ostManager.playCategory("exploration");
+        System.out.println("=== APRÈS ostManager.playCategory ===");
+
 
         System.out.println("=== STELLAR GENESIS ===");
         System.out.println("Planète : masse=" + String.format("%.2e", planetData.getMass()) + " kg");
@@ -359,12 +407,12 @@ public class StellarGenesisApp extends SimpleApplication {
         for (int y = Chunk.SIZE * 8; y >= 0; y--) {
             short block = chunkManager.getBlock(ix, y, iz);
             if (block != 0) {
-                System.out.println("=== TERRAIN FOUND at Y=" + y + " block=" + block);
+//                System.out.println("=== TERRAIN FOUND at Y=" + y + " block=" + block);
                 return y + 1;
             }
         }
 
-        System.out.println("=== WARNING: no terrain found at (" + ix + "," + iz + ")");
+//        System.out.println("=== WARNING: no terrain found at (" + ix + "," + iz + ")");
         return 64f;
     }
 
@@ -385,8 +433,8 @@ public class StellarGenesisApp extends SimpleApplication {
         // -- Skybox suit la caméra --
         skyManager.update(cam.getLocation());
         // -- Cycle jour/nuit --
-//        dayNightCycle.setTimeOfDay(0.0f);  // midi
-//        dayNightCycle.setTimeScale(0f);     // temps gelé
+        dayNightCycle.setTimeOfDay(0.0f);  // midi
+        dayNightCycle.setTimeScale(0f);     // temps gelé
         dayNightCycle.update(tpf);
 
         // -- Chunks --
@@ -479,6 +527,9 @@ public class StellarGenesisApp extends SimpleApplication {
         }
 
         gameHUD.update(playerPos, planetData);
+        // Audio
+        ostManager.update(tpf);   // gère les crossfades
+//        sfxManager.updateEnvironmentSounds(tpf, (float) planetData.getSurfacePressure());
     }
 
     /**

@@ -30,8 +30,8 @@
 
     <repositories>
         <repository>
-            <id>jcenter</id>
-            <url>https://jcenter.bintray.com</url>
+            <id>jme-repo</id>
+            <url>https://packages.jetbrains.team/maven/p/jme/jme-releases</url>
         </repository>
     </repositories>
 
@@ -52,6 +52,11 @@
                 <groupId>org.jmonkeyengine</groupId>
                 <artifactId>jme3-lwjgl3</artifactId>
                 <version>${jme3.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jmonkeyengine</groupId>
+                <artifactId>jme3-jogg</artifactId>
+                <version>3.6.1-stable</version>
             </dependency>
 
             <!-- Physique (remplace jme3-bullet) -->
