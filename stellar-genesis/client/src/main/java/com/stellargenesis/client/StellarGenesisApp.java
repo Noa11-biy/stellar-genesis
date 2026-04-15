@@ -24,6 +24,7 @@ import com.stellargenesis.client.player.PlayerInteraction;
 import com.stellargenesis.client.player.StaminaSystem;
 import com.stellargenesis.client.render.DayNightCycle;
 import com.stellargenesis.client.render.SkyManager;
+import com.stellargenesis.client.screens.TitleScreenState;
 import com.stellargenesis.client.ui.*;
 import com.stellargenesis.core.inventory.Inventory;
 import com.stellargenesis.core.player.MiningSystem;
@@ -90,6 +91,8 @@ public class StellarGenesisApp extends SimpleApplication {
     private OSTManager ostManager;
 //    private SFXManager sfxManager;
 
+    private boolean gameInitialized = false;
+
     // ═══════════════════════════════════════════
     //  MAIN — Point d'entrée
     // ═══════════════════════════════════════════
@@ -99,8 +102,8 @@ public class StellarGenesisApp extends SimpleApplication {
         //Config de la fen
         AppSettings settings = new AppSettings(true);
         settings.setTitle("Stellar Genesis");
-        settings.setWidth(1920);
-        settings.setHeight(1080);
+        settings.setWidth(1280);
+        settings.setHeight(720);
 //        settings.setResolution(1920, 1080);
 //        settings.setFullscreen(true);
         settings.setVSync(true);
@@ -116,25 +119,70 @@ public class StellarGenesisApp extends SimpleApplication {
 
     @Override
     public void simpleInitApp() {
-        // 0. Désactiver flyCam IMMÉDIATEMENT
+        /*
+         * AVANT : tout le jeu s'initialisait ici.
+         * MAINTENANT : on affiche juste l'écran titre.
+         * Le jeu se lance quand le joueur clique "Solo".
+         *
+         * Pourquoi ce changement ?
+         * → Le joueur voit un menu propre au lancement
+         * → On peut ajouter "Continuer", "Paramètres" etc.
+         * → La musique du menu joue pendant que le joueur réfléchit
+         * → initGame() n'est appelé qu'une fois, au bon moment
+         */
+
+        // Désactiver la caméra libre (on est sur un menu, pas en jeu)
         flyCam.setEnabled(false);
         flyCam.setDragToRotate(false);
-        inputManager.deleteMapping("FLYCAM_RotateDrag");
 
-        // 1. Physique Bullet EN PREMIER
+        setDisplayStatView(false);
+        setDisplayFps(false);
+
+        // Supprimer le mapping par défaut de flyCam
+        // sinon il capture la souris même sur le menu
+        if (inputManager.hasMapping("FLYCAM_RotateDrag")) {
+            inputManager.deleteMapping("FLYCAM_RotateDrag");
+        }
+
+        // Attacher l'écran titre — c'est lui qui gère tout
+        stateManager.attach(new TitleScreenState());
+    }
+
+    /**
+     * Initialise le jeu complet.
+     *
+     * Appelé par TitleScreenState quand le joueur clique "Solo".
+     * Contient TOUT le code qui était avant dans simpleInitApp().
+     *
+     * Cette méthode est publique car TitleScreenState doit y accéder
+     * depuis un autre package (screens/).
+     */
+    public void initGame() {
+        if (gameInitialized) return; // sécurité anti double-init
+        gameInitialized = true;
+
+        // Le curseur redevient invisible (on est en FPS maintenant)
+        inputManager.setCursorVisible(false);
+
+        // ════════════════════════════════════════════
+        //  Tout ton code d'initialisation existant :
+        // ════════════════════════════════════════════
+
+        // 1. Physique Bullet
         bulletAppState = new BulletAppState();
         stateManager.attach(bulletAppState);
 
-        // 2. Générer les données physiques de la planète
+        // 2. Données planétaires
         initPlanetData();
 
-        // 3. Appliquer la gravité (après attach, getPhysicsSpace() est dispo)
-        bulletAppState.getPhysicsSpace().setGravity(new Vector3f(0, -(float) planetData.getSurfaceGravity(), 0));
+        // 3. Gravité
+        bulletAppState.getPhysicsSpace().setGravity(
+                new Vector3f(0, -(float) planetData.getSurfaceGravity(), 0));
 
-        // 4. Préparer le monde
+        // 4. Monde
         initWorld();
 
-        // 5. Configurer le rendu
+        // 5. Rendu
         initMaterial();
         initLighting();
 
@@ -145,42 +193,36 @@ public class StellarGenesisApp extends SimpleApplication {
         // 5c. Cycle jour/nuit
         dayNightCycle = new DayNightCycle();
         dayNightCycle.init(planetData, sunLight, ambientLight, skyManager);
-        // Accélérer pour tester (10× plus vite), enlève ça après
         dayNightCycle.setTimeScale(10f);
 
-        // 6. Configurer la caméra
+        // 6. Caméra
         initCamera();
 
-        // 7. Charger les premiers chunks autour du spawn
+        // 7. Chunks initiaux
         loadInitialChunks();
 
-
-        // 8. Créer le joueur avec la gravité de la planète
+        // 8. Joueur
         float spawnY = findTerrainHeight(32, 32) + 3f;
-
         staminaSystem = new StaminaSystem(100.0, planetData.getSurfaceGravity());
-
         float planetGravity = (float) planetData.getSurfaceGravity();
         playerControl = new PlayerControl(
-                rootNode, bulletAppState, cam, inputManager, planetGravity,spawnY, staminaSystem
+                rootNode, bulletAppState, cam, inputManager,
+                planetGravity, spawnY, staminaSystem
         );
 
-        // Forcer la capture de la souris (empêche de sortir de la fenêtre)
         inputManager.setCursorVisible(false);
         mouseInput.setCursorVisible(false);
 
         try {
             robot = new java.awt.Robot();
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         centerX = settings.getWidth() / 2;
         centerY = settings.getHeight() / 2;
 
-    // Dans simpleUpdate()
         if (robot != null) {
-            // Récupérer la position de la fenêtre sur l'écran
-            java.awt.Point windowPos = new java.awt.Point(0, 0);
             if (context instanceof com.jme3.system.lwjgl.LwjglWindow) {
-                // Recentrer la souris au milieu de la fenêtre
                 robot.mouseMove(
                         settings.getWidth() / 2 + getContext().getSettings().getWindowXPosition(),
                         settings.getHeight() / 2 + getContext().getSettings().getWindowYPosition()
@@ -189,25 +231,16 @@ public class StellarGenesisApp extends SimpleApplication {
         }
 
         MiningSystem miningSystem = new MiningSystem(
-                1.0,                // toolEfficiency (main nue)
-                planetData.getSurfaceGravity(), // gravité locale
-                100.0                           // stamina max
+                1.0, planetData.getSurfaceGravity(), 100.0
         );
 
-        inventory = new Inventory(
-                36,
-                80.0,
-                planetData.getSurfaceGravity()
-        );
+        inventory = new Inventory(36, 80.0, planetData.getSurfaceGravity());
         inventory.addItem(BlockType.STONE, 64);
-        int notAdded = inventory.addItem(BlockType.STONE, 64);
-        System.out.println("STONE ajoutés: " + (64 - notAdded) + " / refusés: " + notAdded);
 
         playerInteraction = new PlayerInteraction(
                 cam, worldNode, inputManager,
                 chunkManager, miningSystem, inventory
         );
-
 
         // 9. HUD
         gameHUD = new GameHUD();
@@ -219,58 +252,27 @@ public class StellarGenesisApp extends SimpleApplication {
         miningBar = new MiningBar();
         miningBar.init(guiNode, assetManager, cam);
         invScreen = new InventoryScreen(assetManager, guiNode, cam);
-        invScreen.build(inventory.getSize()); // 40 slots
+        invScreen.build(inventory.getSize());
         playerControl.setInventory(inventory);
         playerControl.setInventoryScreen(invScreen);
 
-        // 10. Audio
+        // 10. Audio du jeu (pas du menu)
         ostManager = new OSTManager(assetManager, rootNode);
-        // Exploration
         ostManager.registerCategory("exploration", 0.4f,
                 "Sounds/OST/exploration/Crossing_The_Last_Frontier.ogg",
                 "Sounds/OST/exploration/Under_A_Cold_Sun.ogg"
-//                "Sounds/OST/exploration/wandering_light.ogg",
-//                "Sounds/OST/exploration/echoes_beneath.ogg"
         );
-
-        // Combat
-//        ostManager.registerCategory("combat", 0.6f,
-//                "Sounds/OST/combat/iron_siege.ogg",
-//                "Sounds/OST/combat/swarm_incoming.ogg",
-//                "Sounds/OST/combat/last_stand.ogg"
-//        );
-
-        // Fabrique
-//        ostManager.registerCategory("factory", 0.3f,
-//                "Sounds/OST/factory/gears_and_gravity.ogg",
-//                "Sounds/OST/factory/assembly_line.ogg",
-//                "Sounds/OST/factory/molten_core.ogg"
-//        );
-
-        // Espace
-//        ostManager.registerCategory("space", 0.5f,
-//                "Sounds/OST/space/void_between_stars.ogg",
-//                "Sounds/OST/space/orbital_drift.ogg",
-//                "Sounds/OST/space/stellar_wind.ogg"
-//        );
-//
-//        // Menu
-//        ostManager.registerCategory("menu", 0.4f,
-//                "Sounds/OST/menu/genesis_theme.ogg",
-//                "Sounds/OST/menu/new_dawn.ogg"
-//        );
-//        sfxManager = new SFXManager(assetManager, rootNode);
-        System.out.println("=== AVANT ostManager.playCategory ===");
         ostManager.playCategory("exploration");
-        System.out.println("=== APRÈS ostManager.playCategory ===");
 
-
-        System.out.println("=== STELLAR GENESIS ===");
-        System.out.println("Planète : masse=" + String.format("%.2e", planetData.getMass()) + " kg");
-        System.out.println("Gravité : " + String.format("%.2f", planetData.getSurfaceGravity()) + " m/s²");
-        System.out.println("Température : " + String.format("%.1f", planetData.getEquilibriumTemp()) + " K");
-        System.out.println("Pression : " + String.format("%.3f", planetData.getSurfacePressure()) + " bar");
-
+        System.out.println("=== STELLAR GENESIS — GAME STARTED ===");
+        System.out.println("Planète : masse=" +
+                String.format("%.2e", planetData.getMass()) + " kg");
+        System.out.println("Gravité : " +
+                String.format("%.2f", planetData.getSurfaceGravity()) + " m/s²");
+        System.out.println("Température : " +
+                String.format("%.1f", planetData.getEquilibriumTemp()) + " K");
+        System.out.println("Pression : " +
+                String.format("%.3f", planetData.getSurfacePressure()) + " bar");
     }
 
     /**
@@ -429,6 +431,8 @@ public class StellarGenesisApp extends SimpleApplication {
 
     @Override
     public void simpleUpdate(float tpf) {
+        if (!gameInitialized) return;
+
         Vector3f playerPos = cam.getLocation();
         // -- Skybox suit la caméra --
         skyManager.update(cam.getLocation());
