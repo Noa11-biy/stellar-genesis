@@ -522,12 +522,8 @@ public class TitleScreenState extends AbstractAppState {
                 break;
             case "newworld":
                 System.out.println(">>> NOUVEAU MONDE CLIQUÉ <<<");
-                // 1. Détacher cet écran
-                app.getStateManager().detach(this);
-                // 2. Nettoyer le GUI
-                app.getGuiNode().detachAllChildren();
-                // 3. Lancer le jeu
-                ((StellarGenesisApp) app).initGame();
+                app.getStateManager().detach(this);      // ← déclenche cleanup()
+                ((StellarGenesisApp) app).initGame();    // ← PAS de detachAllChildren()
                 break;
             case "continue":
                 System.out.println("Continuer — pas de sauvegarde");
@@ -543,7 +539,22 @@ public class TitleScreenState extends AbstractAppState {
     @Override
     public void cleanup() {
         super.cleanup();
-//        app.getInputManager().removeListener(clickListener);
-        app.getInputManager().deleteMapping("click");
+
+        // Détacher les deux nœuds du menu
+        if (menuNode != null) {
+            menuNode.removeFromParent();
+        }
+        if (playMenuNode != null) {
+            playMenuNode.removeFromParent();
+        }
+
+        // Nettoyer les inputs
+        app.getInputManager().removeListener(clickListener);
+        if (app.getInputManager().hasMapping("click")) {
+            app.getInputManager().deleteMapping("click");
+        }
+
+        System.out.println("[TitleScreen] cleanup — guiNode children: "
+                + app.getGuiNode().getChildren().size());
     }
 }

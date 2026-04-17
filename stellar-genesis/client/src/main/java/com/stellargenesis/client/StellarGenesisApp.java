@@ -24,6 +24,7 @@ import com.stellargenesis.client.player.PlayerInteraction;
 import com.stellargenesis.client.player.StaminaSystem;
 import com.stellargenesis.client.render.DayNightCycle;
 import com.stellargenesis.client.render.SkyManager;
+import com.stellargenesis.client.screens.PauseScreenState;
 import com.stellargenesis.client.screens.TitleScreenState;
 import com.stellargenesis.client.ui.*;
 import com.stellargenesis.core.inventory.Inventory;
@@ -65,6 +66,7 @@ public class StellarGenesisApp extends SimpleApplication {
     // -- État --
     private Vector3f lastUpdatePos;      // dernière position où on a mis à jour les chunks
     private static final float CHUNK_UPDATE_THRESHOLD = 8f;
+    private boolean paused = false;
 
     // -- Joueur --
     private PlayerControl playerControl;
@@ -119,6 +121,7 @@ public class StellarGenesisApp extends SimpleApplication {
 
     @Override
     public void simpleInitApp() {
+        inputManager.deleteMapping(INPUT_MAPPING_EXIT);
         /*
          * AVANT : tout le jeu s'initialisait ici.
          * MAINTENANT : on affiche juste l'écran titre.
@@ -143,6 +146,18 @@ public class StellarGenesisApp extends SimpleApplication {
         if (inputManager.hasMapping("FLYCAM_RotateDrag")) {
             inputManager.deleteMapping("FLYCAM_RotateDrag");
         }
+
+        ostManager = new OSTManager(assetManager, rootNode);
+
+        ostManager.registerCategory("menu", 0.4f,
+                "Sounds/OST/menu/First_Step_Into_The_Void.ogg");
+
+        ostManager.registerCategory("exploration", 0.4f,
+                "Sounds/OST/exploration/Crossing_The_Last_Frontier.ogg",
+                "Sounds/OST/exploration/Under_A_Cold_Sun.ogg"
+        );
+
+        ostManager.playCategory("menu");
 
         // Attacher l'écran titre — c'est lui qui gère tout
         stateManager.attach(new TitleScreenState());
@@ -206,6 +221,7 @@ public class StellarGenesisApp extends SimpleApplication {
         staminaSystem = new StaminaSystem(100.0, planetData.getSurfaceGravity());
         float planetGravity = (float) planetData.getSurfaceGravity();
         playerControl = new PlayerControl(
+                this,
                 rootNode, bulletAppState, cam, inputManager,
                 planetGravity, spawnY, staminaSystem
         );
@@ -257,12 +273,7 @@ public class StellarGenesisApp extends SimpleApplication {
         playerControl.setInventoryScreen(invScreen);
 
         // 10. Audio du jeu (pas du menu)
-        ostManager = new OSTManager(assetManager, rootNode);
-        ostManager.registerCategory("exploration", 0.4f,
-                "Sounds/OST/exploration/Crossing_The_Last_Frontier.ogg",
-                "Sounds/OST/exploration/Under_A_Cold_Sun.ogg"
-        );
-        ostManager.playCategory("exploration");
+        ostManager.crossfadeTo("exploration", 2.0f);
 
         System.out.println("=== STELLAR GENESIS — GAME STARTED ===");
         System.out.println("Planète : masse=" +
@@ -431,6 +442,14 @@ public class StellarGenesisApp extends SimpleApplication {
 
     @Override
     public void simpleUpdate(float tpf) {
+        if (paused) return;
+        if (playerControl != null) playerControl.update(tpf);
+        if (playerInteraction != null) playerInteraction.update(tpf);
+
+        if (ostManager != null) {
+            ostManager.update(tpf);
+        }
+
         if (!gameInitialized) return;
 
         Vector3f playerPos = cam.getLocation();
@@ -531,9 +550,82 @@ public class StellarGenesisApp extends SimpleApplication {
         }
 
         gameHUD.update(playerPos, planetData);
-        // Audio
-        ostManager.update(tpf);   // gère les crossfades
 //        sfxManager.updateEnvironmentSounds(tpf, (float) planetData.getSurfacePressure());
+    }
+
+    public void togglePause() {
+        if (!gameInitialized) return;
+        if (paused) resumeGame();
+        else pauseGame();
+    }
+
+    public void pauseGame() {
+        if (paused) return;
+        paused = true;
+
+        playerControl.setEnabled(false);
+        bulletAppState.setEnabled(false);
+        inputManager.setCursorVisible(true);
+
+        stateManager.attach(new PauseScreenState());
+        System.out.println("[App] Pause.");
+    }
+
+    public void resumeGame() {
+        if (!paused) return;
+        paused = false;
+
+        PauseScreenState pause = stateManager.getState(PauseScreenState.class);
+        if (pause != null) stateManager.detach(pause);
+
+        playerControl.setEnabled(true);
+        bulletAppState.setEnabled(true);
+        inputManager.setCursorVisible(false);
+        System.out.println("[App] Reprise.");
+    }
+
+    public void backToTitle() {
+        System.out.println("[App] Retour menu.");
+
+        // 1. Retirer pause
+        PauseScreenState pause = stateManager.getState(PauseScreenState.class);
+        if (pause != null) stateManager.detach(pause);
+        paused = false;
+
+        // Vérifier s'il y a déjà un TitleScreenState attaché
+        TitleScreenState existing = stateManager.getState(TitleScreenState.class);
+        if (existing != null) {
+            stateManager.detach(existing);
+        }
+
+        // 2. Nettoyer les inputs du joueur (délégué à PlayerControl)
+        if (playerControl != null) {
+            playerControl.cleanup();
+            playerControl = null;
+        }
+
+        // 3. Détacher la physique
+        if (bulletAppState != null) {
+            stateManager.detach(bulletAppState);
+            bulletAppState = null;
+        }
+
+        // 4. Nettoyer la scène
+        rootNode.detachAllChildren();
+        guiNode.detachAllChildren();
+
+        if (sunLight != null) rootNode.removeLight(sunLight);
+        if (ambientLight != null) rootNode.removeLight(ambientLight);
+
+        gameInitialized = false;
+
+        // Remettre musique du menu
+        if (ostManager != null) {
+            ostManager.playCategory("menu");
+        }
+
+        // 5. Relancer l'écran titre
+        stateManager.attach(new TitleScreenState());
     }
 
     /**
@@ -600,4 +692,8 @@ public class StellarGenesisApp extends SimpleApplication {
             bulletAppState.getPhysicsSpace().add(rb);
         }
     }
+
+    public PlayerControl getPlayerControl() { return playerControl; }
+    public PlayerInteraction getPlayerInteraction() { return playerInteraction; }
+    public BulletAppState getBulletAppState() { return bulletAppState; }
 }

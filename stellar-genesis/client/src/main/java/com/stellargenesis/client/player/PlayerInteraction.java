@@ -50,6 +50,7 @@ public class PlayerInteraction {
     private boolean mouseHeld = false;      // clic gauche maintenu
     private Vector3f targetBlockPos = null; // position monde du bloc visé
     private BlockType targetBlockType = null;
+    private boolean enabled = true;
 
     public PlayerInteraction(Camera cam, Node worldNode, InputManager inputManager, ChunkManager chunkManager,
                              MiningSystem miningSystem, Inventory inventory){
@@ -75,6 +76,7 @@ public class PlayerInteraction {
         inputManager.addMapping("Place", new MouseButtonTrigger(MouseInput.BUTTON_RIGHT));
 
         inputManager.addListener((ActionListener) (name, isPressed, tpf) -> {
+            if (!enabled) return;
             System.out.println("ACTION: " + name + " pressed=" + isPressed);
             if (name.equals("Mine")) {
                 mouseHeld = isPressed;
@@ -160,6 +162,7 @@ public class PlayerInteraction {
      * 5. Si pas de clic → régénérer l'endurance
      */
     public void update(float tpf){
+        if (!enabled) return;
         if (mouseHeld) {
             // --- RAYCAST ---
             RaycastResult hit = raycast();
@@ -293,6 +296,17 @@ public class PlayerInteraction {
         // 3. Reset
         targetBlockPos = null;
         targetBlockType = null;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+        if (!enabled) {
+            // Arrêter tout état actif
+            mouseHeld = false;
+            miningSystem.stopMining();
+            targetBlockPos = null;
+            targetBlockType = null;
+        }
     }
 
     /**

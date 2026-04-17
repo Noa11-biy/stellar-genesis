@@ -11,6 +11,7 @@ import com.jme3.input.event.*;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Node;
+import com.stellargenesis.client.StellarGenesisApp;
 import com.stellargenesis.client.ui.InventoryScreen;
 import com.stellargenesis.core.inventory.Inventory;
 
@@ -59,14 +60,24 @@ public class PlayerControl {
     private float yaw = 0;      // rotation horizontale (gauche/droite)
     private float pitch = 0;    // rotation verticale (haut/bas)
 
+    // === État actif/inactif ===
+    private boolean enabled = true;
+
+    // === Listener souris (extrait pour pouvoir le cleanup) ===
+    private RawInputListener rawInputListener;
+
+    // === Référence à l'app pour déclencher la pause ===
+    private StellarGenesisApp app;
+
     private InventoryScreen inventoryScreen;
 
 
     /**
      * @param gravity gravité de surface en m/s² (ex: 9.81 pour Terre, 3.72 pour Mars)
      */
-    public PlayerControl(Node rootNode, BulletAppState bulletState,
+    public PlayerControl(StellarGenesisApp app, Node rootNode, BulletAppState bulletState,
                          Camera cam, InputManager inputManager, float gravity, float spawnY, StaminaSystem staminaSystem){
+        this.app = app;
         this.cam = cam;
         this.inputManager = inputManager;
         this.gravity = gravity;
@@ -145,6 +156,7 @@ public class PlayerControl {
      * Enregistrement des touches ZQSD + Espace + Shift + Souris
      */
     private void setupKeys(){
+        System.out.println("[PlayerControl] setupKeys appelé, instance=" + this.hashCode());
         // Mappings clavier
         inputManager.addMapping("Forward", new KeyTrigger(KeyInput.KEY_W));
         inputManager.addMapping("Backward", new KeyTrigger(KeyInput.KEY_S));
@@ -154,15 +166,17 @@ public class PlayerControl {
         inputManager.addMapping("Sprint", new KeyTrigger(KeyInput.KEY_LSHIFT));
         inputManager.addMapping("Inventory", new KeyTrigger(KeyInput.KEY_TAB));
         inputManager.addMapping("InventoryClick", new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
+        inputManager.addMapping("Pause", new KeyTrigger(KeyInput.KEY_ESCAPE));;
 
         // Listener pour les touches (pressed/released)
         inputManager.addListener(actionListener,
-                "Forward", "Backward", "Left", "Right", "Jump", "Sprint", "Inventory");
+                "Forward", "Backward", "Left", "Right", "Jump", "Sprint", "Inventory","Pause");
 
         // === SOURIS — RawInputListener (capture les deltas bruts) ===
-        inputManager.addRawInputListener(new RawInputListener() {
+        rawInputListener = new RawInputListener() {
             @Override
             public void onMouseMotionEvent(MouseMotionEvent evt) {
+                if (!enabled) return;
                 if (inventoryOpen) return;
                 float dx = evt.getDX();
                 float dy = evt.getDY();
@@ -170,6 +184,7 @@ public class PlayerControl {
                 pitch += dy * MOUSE_SENSITIVITY * 0.002f;
                 pitch = Math.max(-1.5f, Math.min(1.5f, pitch));
                 inputManager.setCursorVisible(false);
+                System.out.println("[PlayerControl] mouse dx=" + dx + " enabled=" + enabled);
             }
 
             @Override public void beginInput() {}
@@ -179,7 +194,8 @@ public class PlayerControl {
             @Override public void onMouseButtonEvent(MouseButtonEvent evt) {}
             @Override public void onKeyEvent(KeyInputEvent evt) {}
             @Override public void onTouchEvent(TouchEvent evt) {}
-        });
+        };
+        inputManager.addRawInputListener(rawInputListener);
     }
 
     /**
@@ -187,6 +203,17 @@ public class PlayerControl {
      * isPressed=true quand on appuie, false quand on relâche.
      */
     private final ActionListener actionListener = (name, isPressed, tpf) -> {
+        // Échap fonctionne MÊME quand enabled=false (pour pouvoir dépauser)
+        if (name.equals("Pause") && isPressed) {
+            if (inventoryOpen) {
+                toggleInventory();  // Échap ferme l'inventaire en priorité
+            } else {
+                app.togglePause();  // sinon pause/reprise
+            }
+            return;
+        }
+
+        if (!enabled) return;
         switch (name){
             case "Forward": forward = isPressed; break;
             case "Backward": backward = isPressed; break;
@@ -261,6 +288,8 @@ public class PlayerControl {
      * → Pas de déplacement absolu (sinon Z irait toujours au nord)
      */
     public void update(float tpf){
+        if (!enabled) return;
+
         // 1. Mettre à jour la rotation caméra
         cam.lookAtDirection(getCamDirection(), Vector3f.UNIT_Y);
 
@@ -303,6 +332,41 @@ public class PlayerControl {
         return forward || backward || left || right;
     }
 
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+        if (!enabled) {
+            // Stopper tous les mouvements en cours
+            forward = backward = left = right = false;
+            sprinting = false;
+            characterControl.setWalkDirection(Vector3f.ZERO);
+        }
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    /**
+     * Nettoie tous les mappings et listeners du joueur.
+     * À appeler quand on quitte la partie.
+     */
+    public void cleanup() {
+        String[] mappings = {
+                "Forward", "Backward", "Left", "Right",
+                "Jump", "Sprint", "Inventory", "InventoryClick",
+                "MouseLeft", "MouseRight", "MouseUp", "MouseDown",
+                "Pause"
+        };
+        for (String m : mappings) {
+            if (inputManager.hasMapping(m)) inputManager.deleteMapping(m);
+        }
+        inputManager.removeListener(actionListener);
+        if (rawInputListener != null) {
+            inputManager.removeRawInputListener(rawInputListener);
+            rawInputListener = null;
+        }
+        enabled = false;
+    }
     /**
      * Calcule la direction de la caméra à partir de yaw et pitch.
      *
