@@ -33,9 +33,7 @@ import com.stellargenesis.core.world.*;
 import com.stellargenesis.core.physics.PlanetData;
 import com.stellargenesis.core.physics.PlanetPhysics;
 
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Point d'entrée du jeu.
@@ -94,6 +92,8 @@ public class StellarGenesisApp extends SimpleApplication {
 //    private SFXManager sfxManager;
 
     private boolean gameInitialized = false;
+    private boolean chunksReady = false;
+    private float spawnY;
 
     // ═══════════════════════════════════════════
     //  MAIN — Point d'entrée
@@ -108,9 +108,9 @@ public class StellarGenesisApp extends SimpleApplication {
         settings.setHeight(720);
 //        settings.setResolution(1920, 1080);
 //        settings.setFullscreen(true);
-        settings.setVSync(true);
+        settings.setVSync(false);
+        settings.setFrameRate(-1);
         settings.setSamples(4);
-        settings.setFrameRate(60);
 
 
         app.setSettings(settings);
@@ -138,8 +138,8 @@ public class StellarGenesisApp extends SimpleApplication {
         flyCam.setEnabled(false);
         flyCam.setDragToRotate(false);
 
-        setDisplayStatView(false);
-        setDisplayFps(false);
+        setDisplayStatView(true);
+        setDisplayFps(true);
 
         // Supprimer le mapping par défaut de flyCam
         // sinon il capture la souris même sur le menu
@@ -214,10 +214,15 @@ public class StellarGenesisApp extends SimpleApplication {
         initCamera();
 
         // 7. Chunks initiaux
-        loadInitialChunks();
+//        loadInitialChunks();
 
         // 8. Joueur
-        float spawnY = findTerrainHeight(32, 32) + 3f;
+        spawnY = findTerrainHeight(32, 32) + 3f;
+
+        // Lancer le chargement async du reste
+        chunkManager.update(32, (int) spawnY, 32);
+
+
         staminaSystem = new StaminaSystem(100.0, planetData.getSurfaceGravity());
         float planetGravity = (float) planetData.getSurfaceGravity();
         playerControl = new PlayerControl(
@@ -225,6 +230,14 @@ public class StellarGenesisApp extends SimpleApplication {
                 rootNode, bulletAppState, cam, inputManager,
                 planetGravity, spawnY, staminaSystem
         );
+
+        preloadSpawnChunks();
+        System.out.println("=== SPAWN Y: " + spawnY);
+        playerControl.teleportTo(new Vector3f(32, spawnY, 32));
+        chunksReady = true;
+
+        chunkManager.update(32, (int) spawnY, 32);
+        loadInitialChunks();
 
         inputManager.setCursorVisible(false);
         mouseInput.setCursorVisible(false);
@@ -409,23 +422,29 @@ public class StellarGenesisApp extends SimpleApplication {
         int ix = (int) x;
         int iz = (int) z;
 
-        // Forcer la génération des chunks sous le spawn (synchrone)
         int chunkX = Math.floorDiv(ix, Chunk.SIZE);
         int chunkZ = Math.floorDiv(iz, Chunk.SIZE);
+
+        // Générer les chunks de la colonne de spawn directement (appelé UNE FOIS au spawn)
         for (int cy = 0; cy <= 8; cy++) {
-            chunkManager.getOrGenerate(new ChunkPos(chunkX, cy, chunkZ));
+            ChunkPos pos = new ChunkPos(chunkX, cy, chunkZ);
+
+            // Si pas encore chargé → générer maintenant sur le thread principal
+            if (chunkManager.getChunk(pos) == null) {
+                Chunk chunk = new Chunk(pos);
+                worldGenerator.generateChunk(chunk);
+                chunkManager.forceInsert(pos, chunk); // ← à ajouter dans ChunkManager
+            }
         }
 
-        // Maintenant chercher de haut en bas
+        // Chercher le premier bloc solide de haut en bas
         for (int y = Chunk.SIZE * 8; y >= 0; y--) {
             short block = chunkManager.getBlock(ix, y, iz);
             if (block != 0) {
-//                System.out.println("=== TERRAIN FOUND at Y=" + y + " block=" + block);
                 return y + 1;
             }
         }
 
-//        System.out.println("=== WARNING: no terrain found at (" + ix + "," + iz + ")");
         return 64f;
     }
 
@@ -443,67 +462,140 @@ public class StellarGenesisApp extends SimpleApplication {
     @Override
     public void simpleUpdate(float tpf) {
         if (paused) return;
+        if (!gameInitialized) return;
+
+        // ═══════════════════════════════════════════
+        //  PHASE 1 — POMPER LA QUEUE DE CHUNKS
+        //  Toujours fait, même si chunksReady = false
+        // ═══════════════════════════════════════════
+        {
+            int limit = chunksReady ? 4 : Integer.MAX_VALUE; // Au démarrage : tout vider
+            int attached = 0;
+            ChunkManager.ChunkMeshPair pair;
+            while (attached < limit && (pair = chunkManager.getReadyQueue().poll()) != null) {
+                attachChunk(pair.pos(), pair.mesh());
+                attached++;
+            }
+        }
+
+        // ═══════════════════════════════════════════
+        //  PHASE 2 — ATTENDRE QUE LE SOL EXISTE
+        //  Bloquer la logique joueur jusqu'aux chunks de spawn
+        // ═══════════════════════════════════════════
+
+        int attached = 0;
+        ChunkManager.ChunkMeshPair pair;
+        while (attached < 4 && (pair = chunkManager.getReadyQueue().poll()) != null) {
+            attachChunk(pair.pos(), pair.mesh());
+            attached++;
+        }
+
+        // ═══════════════════════════════════════════
+        //  PHASE 3 — LOGIQUE JOUEUR
+        // ═══════════════════════════════════════════
         if (playerControl != null) playerControl.update(tpf);
         if (playerInteraction != null) playerInteraction.update(tpf);
 
-        if (ostManager != null) {
-            ostManager.update(tpf);
+        Vector3f playerPos = cam.getLocation();
+
+        // ═══════════════════════════════════════════
+        //  PHASE 4 — STAMINA
+        // ═══════════════════════════════════════════
+        {
+            boolean sprinting = playerControl.isSprinting();
+            boolean mining    = playerInteraction.isMining();
+
+            StaminaSystem.Activity activity;
+            if (sprinting && staminaSystem.canSprint()) {
+                activity = StaminaSystem.Activity.SPRINT;
+            } else if (mining) {
+                activity = StaminaSystem.Activity.WALK;
+            } else {
+                activity = StaminaSystem.Activity.IDLE;
+            }
+
+            staminaSystem.update(tpf, activity);
+
+            if (!staminaSystem.canSprint()) {
+                playerControl.setSprintAllowed(false);
+                playerControl.setSprintMultiplier(1.0f);
+            } else {
+                playerControl.setSprintAllowed(true);
+                playerControl.setSprintMultiplier(sprinting ? 1.8f : 1.0f);
+            }
         }
 
-        if (!gameInitialized) return;
-
-        Vector3f playerPos = cam.getLocation();
-        // -- Skybox suit la caméra --
-        skyManager.update(cam.getLocation());
-        // -- Cycle jour/nuit --
-        dayNightCycle.setTimeOfDay(0.0f);  // midi
-        dayNightCycle.setTimeScale(0f);     // temps gelé
+        // ═══════════════════════════════════════════
+        //  PHASE 5 — SKYBOX & CYCLE JOUR/NUIT
+        // ═══════════════════════════════════════════
+        skyManager.update(playerPos);
+        dayNightCycle.setTimeOfDay(0.0f);
+        dayNightCycle.setTimeScale(0f);
         dayNightCycle.update(tpf);
 
-        // -- Chunks --
+        // ═══════════════════════════════════════════
+        //  PHASE 6 — MISE À JOUR DES CHUNKS VISIBLES
+        // ═══════════════════════════════════════════
         if (playerPos.distance(lastUpdatePos) > CHUNK_UPDATE_THRESHOLD) {
             updateVisibleChunks(playerPos);
             lastUpdatePos = playerPos.clone();
         }
 
-        // -- Joueur --
-        playerControl.update(tpf);
-        playerInteraction.update(tpf);
+        // ═══════════════════════════════════════════
+        //  PHASE 7 — REMESH DES CHUNKS DIRTY
+        //  (blocs minés, placés, modifiés)
+        // ═══════════════════════════════════════════
+        {
+            List<Spatial> children = new ArrayList<>(worldNode.getChildren());
+            for (Spatial child : children) {
+                Integer cx = child.getUserData("cx");
+                if (cx == null) continue;
 
-        // -- Stamina --
-        boolean sprinting = playerControl.isSprinting();
-        boolean mining = playerInteraction.isMining();
-        boolean resting = !sprinting && !mining;
+                int cy  = (int) child.getUserData("cy");
+                int cz  = (int) child.getUserData("cz");
+                ChunkPos pos = new ChunkPos(cx, cy, cz);
 
-        StaminaSystem.Activity activity;
-        if (sprinting && staminaSystem.canSprint()) {
-            activity = StaminaSystem.Activity.SPRINT;
-        } else if (mining) {
-            activity = StaminaSystem.Activity.WALK;
-        } else {
-            activity = StaminaSystem.Activity.IDLE;
-        }
+                Chunk chunk = chunkManager.getChunk(pos);
+                if (chunk == null || !chunk.isDirty()) continue;
 
-        staminaSystem.update(tpf, activity);
+                Mesh newMesh = ChunkMeshBuilder.buildMesh(chunk, chunkManager);
 
-        // Sprint bloqué si exhausted
-        if (!staminaSystem.canSprint()) {
-            playerControl.setSprintAllowed(false);
-            playerControl.setSprintMultiplier(1.0f);
-        } else {
-            playerControl.setSprintAllowed(true);
-            if (sprinting) {
-                playerControl.setSprintMultiplier(1.8f);
-            } else {
-                playerControl.setSprintMultiplier(1.0f);
+                if (newMesh == null) {
+                    // Chunk vide → retirer de la scène
+                    RigidBodyControl rbc = child.getControl(RigidBodyControl.class);
+                    if (rbc != null) bulletAppState.getPhysicsSpace().remove(rbc);
+                    worldNode.detachChild(child);
+                } else {
+                    // Mettre à jour le mesh et la physique
+                    ((Geometry) child).setMesh(newMesh);
+
+                    RigidBodyControl oldRbc = child.getControl(RigidBodyControl.class);
+                    if (oldRbc != null) {
+                        bulletAppState.getPhysicsSpace().remove(oldRbc);
+                        child.removeControl(oldRbc);
+                    }
+
+                    RigidBodyControl newRbc = new RigidBodyControl(
+                            new MeshCollisionShape(newMesh), 0f
+                    );
+                    child.addControl(newRbc);
+                    bulletAppState.getPhysicsSpace().add(newRbc);
+                }
+
+                chunk.markClean();
             }
         }
 
-        // -- UI --
+        // ═══════════════════════════════════════════
+        //  PHASE 8 — UI
+        // ═══════════════════════════════════════════
+        if (ostManager != null) ostManager.update(tpf);
+
         staminaBar.update((float) staminaSystem.getPercent());
+
         if (playerControl.isInventoryOpen()) {
             invScreen.refresh(inventory);
-            return; // bloquer le mouvement
+            return; // Ne pas mettre à jour le reste de l'UI
         }
 
         if (playerInteraction.isMining()) {
@@ -513,44 +605,61 @@ public class StellarGenesisApp extends SimpleApplication {
             miningBar.hide();
         }
 
-        // -- Remesh chunks dirty --
-        for (Spatial child : worldNode.getChildren()) {
-            Integer cx = child.getUserData("cx");
-            if (cx == null) continue;
+        gameHUD.update(playerPos, planetData);
+    }
 
-            int cy = (int) child.getUserData("cy");
-            int cz = (int) child.getUserData("cz");
-            ChunkPos pos = new ChunkPos(cx, cy, cz);
+    private void attachChunk(ChunkPos pos, com.jme3.scene.Mesh mesh) {
+        // Vérifier qu'il n'est pas déjà attaché (sécurité)
+        if (worldNode.getChild("chunk_" + pos) != null) return;
 
-            Chunk chunk = chunkManager.getChunk(pos);
-            if (chunk == null || !chunk.isDirty()) continue;
+        Geometry geom = new Geometry("chunk_" + pos, mesh);
+        geom.setMaterial(blockMaterial);
+        geom.setLocalTranslation(
+                pos.x * Chunk.SIZE,
+                pos.y * Chunk.SIZE,
+                pos.z * Chunk.SIZE
+        );
+        geom.setUserData("cx", pos.x);
+        geom.setUserData("cy", pos.y);
+        geom.setUserData("cz", pos.z); // un seul userData
 
-            Mesh newMesh = ChunkMeshBuilder.buildMesh(chunk, chunkManager);
+        RigidBodyControl rb = new RigidBodyControl(
+                new MeshCollisionShape(mesh), 0f
+        );
+        geom.addControl(rb);
+        bulletAppState.getPhysicsSpace().add(rb);
+        worldNode.attachChild(geom);
+    }
 
-            if (newMesh == null) {
-                RigidBodyControl rbc = child.getControl(RigidBodyControl.class);
-                if (rbc != null) bulletAppState.getPhysicsSpace().remove(rbc);
-                worldNode.detachChild(child);
-            } else {
-                ((Geometry) child).setMesh(newMesh);
+    private void preloadSpawnChunks() {
+        int pcx = Math.floorDiv(32, Chunk.SIZE);
+        int pcz = Math.floorDiv(32, Chunk.SIZE);
+        int spawnChunkY = Math.floorDiv((int) spawnY, Chunk.SIZE);
 
-                RigidBodyControl oldRbc = child.getControl(RigidBodyControl.class);
-                if (oldRbc != null) {
-                    bulletAppState.getPhysicsSpace().remove(oldRbc);
-                    child.removeControl(oldRbc);
+        System.out.println("[PRELOAD] Génération synchrone des chunks de spawn...");
+
+        // Générer synchroniquement UNIQUEMENT les chunks autour du spawn (3x3x4)
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                for (int dy = -1; dy <= 2; dy++) {
+                    ChunkPos pos = new ChunkPos(pcx + dx, spawnChunkY + dy, pcz + dz);
+
+                    if (chunkManager.getChunk(pos) != null) continue;
+
+                    // Synchrone — on attend que ce soit fait
+                    Chunk chunk = new Chunk(pos);
+                    worldGenerator.generateChunk(chunk);
+                    chunkManager.forceInsert(pos, chunk);
+
+                    Mesh mesh = ChunkMeshBuilder.buildMesh(chunk, chunkManager);
+                    if (mesh != null) {
+                        attachChunk(pos, mesh);
+                    }
                 }
-                RigidBodyControl newRbc = new RigidBodyControl(
-                        new MeshCollisionShape(newMesh), 0f
-                );
-                child.addControl(newRbc);
-                bulletAppState.getPhysicsSpace().add(newRbc);
             }
-
-            chunk.markClean();
         }
 
-        gameHUD.update(playerPos, planetData);
-//        sfxManager.updateEnvironmentSounds(tpf, (float) planetData.getSurfacePressure());
+        System.out.println("[PRELOAD] Chunks de spawn prêts !");
     }
 
     public void togglePause() {
@@ -641,56 +750,32 @@ public class StellarGenesisApp extends SimpleApplication {
         int pcy = Math.floorDiv((int) playerPos.y, Chunk.SIZE);
         int pcz = Math.floorDiv((int) playerPos.z, Chunk.SIZE);
 
-        // 1. Collecter les positions qui DOIVENT être visibles
+        // 1. Collecter les positions nécessaires
         Set<ChunkPos> needed = new HashSet<>();
-        for (int dx = -renderDistance; dx <= renderDistance; dx++) {
-            for (int dy = -2; dy <= 4; dy++) {
-                for (int dz = -renderDistance; dz <= renderDistance; dz++) {
-                    needed.add(new ChunkPos(pcx + dx, pcy + dy, pcz + dz));
-                }
-            }
+        for (int dx = -renderDistance; dx <= renderDistance; dx++)
+            for (int dy = -2; dy <= 4; dy++)
+                for (int dz = -renderDistance; dz <= renderDistance; dz++)
+                    needed.add(new ChunkPos(pcx+dx, pcy+dy, pcz+dz));
+
+        // 2. Retirer les chunks hors rayon — copie AVANT de modifier
+        List<Spatial> toDetach = new ArrayList<>();
+        for (Spatial child : worldNode.getChildren()) {
+            ChunkPos pos = child.getUserData("chunkPos");
+            if (pos != null && !needed.contains(pos))
+                toDetach.add(child);
+        }
+        for (Spatial child : toDetach) {
+            RigidBodyControl rbc = child.getControl(RigidBodyControl.class);
+            if (rbc != null) bulletAppState.getPhysicsSpace().remove(rbc);
+            worldNode.detachChild(child);
         }
 
-        // 2. Retirer les chunks qui ne sont PLUS nécessaires
-        Iterator<Spatial> it = worldNode.getChildren().iterator();
-        while (it.hasNext()) {
-            Spatial child = it.next();
-            ChunkPos pos = (ChunkPos) child.getUserData("chunkPos");
-            if (pos != null && !needed.contains(pos)) {
-                RigidBodyControl rbc = child.getControl(RigidBodyControl.class);
-                if (rbc != null) bulletAppState.getPhysicsSpace().remove(rbc);
-                worldNode.detachChild(child);
-            }
-        }
-
-        // 3. Ajouter les chunks manquants
-        for (ChunkPos pos : needed) {
-            if (worldNode.getChild("chunk_" + pos) != null) continue; // déjà affiché
-
-            Chunk chunk = chunkManager.getOrGenerate(pos);
-            if (chunk == null) continue;
-
-            Mesh mesh = ChunkMeshBuilder.buildMesh(chunk, chunkManager);
-            if (mesh == null) continue;
-
-            Geometry geom = new Geometry("chunk_" + pos, mesh);
-            geom.setMaterial(blockMaterial);
-            geom.setLocalTranslation(
-                    pos.x * Chunk.SIZE,
-                    pos.y * Chunk.SIZE,
-                    pos.z * Chunk.SIZE
-            );
-//            // Stocker la position pour le nettoyage
-//            geom.setUserData("chunkPos", pos);
-
-            worldNode.attachChild(geom);
-            geom.setUserData("cx", pos.x);
-            geom.setUserData("cy", pos.y);
-            geom.setUserData("cz", pos.z);
-            RigidBodyControl rb = new RigidBodyControl(new MeshCollisionShape(mesh), 0f);
-            geom.addControl(rb);
-            bulletAppState.getPhysicsSpace().add(rb);
-        }
+        // 3. Demander les chunks manquants — NON BLOQUANT
+        chunkManager.update(
+                (int) playerPos.x,
+                (int) playerPos.y,
+                (int) playerPos.z
+        );
     }
 
     public PlayerControl getPlayerControl() { return playerControl; }

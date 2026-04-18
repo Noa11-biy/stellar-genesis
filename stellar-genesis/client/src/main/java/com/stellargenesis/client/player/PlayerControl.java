@@ -170,7 +170,8 @@ public class PlayerControl {
 
         // Listener pour les touches (pressed/released)
         inputManager.addListener(actionListener,
-                "Forward", "Backward", "Left", "Right", "Jump", "Sprint", "Inventory","Pause");
+                "Forward", "Backward", "Left", "Right", "Jump", "Sprint",
+                "Inventory","Pause", "InventoryClick");
 
         // === SOURIS — RawInputListener (capture les deltas bruts) ===
         rawInputListener = new RawInputListener() {
@@ -232,6 +233,7 @@ public class PlayerControl {
                 break;
 
             case "InventoryClick":
+                System.out.println("[Click] pressed=" + isPressed + " invOpen=" + inventoryOpen + " screen=" + (inventoryScreen != null));
                 if (inventoryOpen && inventoryScreen != null) {
                     com.jme3.math.Vector2f pos = inputManager.getCursorPosition();
                     if (isPressed) {
@@ -265,6 +267,11 @@ public class PlayerControl {
         this.sprintAllowed = allowed;
         if (!allowed && sprinting) sprinting = false;
     }
+
+    public void teleportTo(Vector3f pos) {
+        characterControl.warp(pos); // warp() = téléportation Bullet sans collision
+    }
+
 
     public void setInventoryScreen(InventoryScreen screen) {
         this.inventoryScreen = screen;

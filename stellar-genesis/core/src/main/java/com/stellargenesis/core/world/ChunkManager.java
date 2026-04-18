@@ -33,6 +33,7 @@ public class ChunkManager {
     private final ConcurrentHashMap<ChunkPos, Chunk> loadedChunks;
     private final ExecutorService genPool;
     private final ConcurrentHashMap<ChunkPos, Boolean> pendingGeneration;
+    private final ConcurrentLinkedQueue<ChunkMeshPair> readyToAttach = new ConcurrentLinkedQueue<>();
     private final WorldGenerator generator;
     private final int renderDistance;
 
@@ -122,16 +123,48 @@ public class ChunkManager {
      * C'est pour ça qu'on utilise ConcurrentHashMap :
      * ce code tourne en parallèle du rendu.
      */
-    private void generateAsync(ChunkPos pos){
-        try{
+    private void generateAsync(ChunkPos pos) {
+        try {
             Chunk chunk = new Chunk(pos);
             generator.generateChunk(chunk);
-            chunk.markDirty(); // Le mesh doit être construit
-
             loadedChunks.put(pos, chunk);
+
+            // Mesher ce chunk
+            com.jme3.scene.Mesh mesh = ChunkMeshBuilder.buildMesh(chunk, this);
+            if (mesh != null) {
+                readyToAttach.add(new ChunkMeshPair(pos, chunk, mesh));
+            }
+
+            // Remarquer les 6 voisins déjà chargés pour qu'ils se re-meshent
+            remeshNeighbors(pos);
+
         } finally {
-            // Toujours retirer de pending, même en cas d'erreur
             pendingGeneration.remove(pos);
+        }
+    }
+
+    private void remeshNeighbors(ChunkPos pos) {
+        int[][] neighborOffsets = {
+                {1,0,0}, {-1,0,0},
+                {0,1,0}, {0,-1,0},
+                {0,0,1}, {0,0,-1}
+        };
+
+        for (int[] offset : neighborOffsets) {
+            ChunkPos neighborPos = new ChunkPos(
+                    pos.x + offset[0],
+                    pos.y + offset[1],
+                    pos.z + offset[2]
+            );
+
+            Chunk neighbor = loadedChunks.get(neighborPos);
+            if (neighbor == null) continue; // pas encore chargé, pas grave
+
+            // Re-mesher le voisin avec les nouvelles données disponibles
+            com.jme3.scene.Mesh newMesh = ChunkMeshBuilder.buildMesh(neighbor, this);
+            if (newMesh != null) {
+                readyToAttach.add(new ChunkMeshPair(neighborPos, neighbor, newMesh));
+            }
         }
     }
 
@@ -226,17 +259,31 @@ public class ChunkManager {
     /**
      * Récupère un chunk s'il est chargé, sinon le génère.
      */
-    public Chunk getOrGenerate(ChunkPos pos) {
-        return loadedChunks.computeIfAbsent(pos, p -> {
-            Chunk chunk = new Chunk(p);
-            generator.generateChunk(chunk);
-            return chunk;
-        });
+//    public Chunk getOrGenerate(ChunkPos pos) {
+//        return loadedChunks.computeIfAbsent(pos, p -> {
+//            Chunk chunk = new Chunk(p);
+//            generator.generateChunk(chunk);
+//            return chunk;
+//        });
+//    }
+
+    /**
+     * Insérer un chunk directement dans la map (spawn synchrone).
+     * Utilisé UNIQUEMENT pour findTerrainHeight au démarrage.
+     */
+    public void forceInsert(ChunkPos pos, Chunk chunk) {
+        loadedChunks.put(pos, chunk);
     }
+
 
     public int getRenderDistance() {
         return renderDistance;
     }
+
+    public ConcurrentLinkedQueue<ChunkMeshPair> getReadyQueue() {
+        return readyToAttach;
+    }
+
 
     /**
      * Arrêter proprement le pool de génération.
@@ -254,4 +301,5 @@ public class ChunkManager {
         }
     }
 
+    public record ChunkMeshPair(ChunkPos pos, Chunk chunk, com.jme3.scene.Mesh mesh) {}
 }

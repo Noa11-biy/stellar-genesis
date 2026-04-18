@@ -243,7 +243,7 @@ public class TitleScreenState extends AbstractAppState {
         version.setLocalTranslation(marginLeft, screenH * 0.04f, 1);
         menuNode.attachChild(version);
 
-        BitmapText credit = makeText("Projet BUT Informatique 2025", footerSize, TEXT_DIM.mult(0.6f));
+        BitmapText credit = makeText("Projet Solo", footerSize, TEXT_DIM.mult(0.6f));
         credit.setLocalTranslation(
                 screenW - credit.getLineWidth() - screenW * 0.03f,
                 screenH * 0.04f, 1);
