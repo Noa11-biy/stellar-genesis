@@ -130,7 +130,7 @@ public class ChunkManager {
             loadedChunks.put(pos, chunk);
 
             // Mesher ce chunk
-            com.jme3.scene.Mesh mesh = ChunkMeshBuilder.buildMesh(chunk, this);
+            com.jme3.scene.Mesh mesh = GreedyMeshBuilder.buildMesh(chunk, this);
             if (mesh != null) {
                 readyToAttach.add(new ChunkMeshPair(pos, chunk, mesh));
             }
@@ -161,7 +161,7 @@ public class ChunkManager {
             if (neighbor == null) continue; // pas encore chargé, pas grave
 
             // Re-mesher le voisin avec les nouvelles données disponibles
-            com.jme3.scene.Mesh newMesh = ChunkMeshBuilder.buildMesh(neighbor, this);
+            com.jme3.scene.Mesh newMesh = GreedyMeshBuilder.buildMesh(neighbor, this);
             if (newMesh != null) {
                 readyToAttach.add(new ChunkMeshPair(neighborPos, neighbor, newMesh));
             }
