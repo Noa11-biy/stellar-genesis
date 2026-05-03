@@ -109,7 +109,7 @@ public class Vec3 {
 
     public Vec3 cross(Vec3 other){
         return new Vec3(
-                this.y * other.z - this.z * other.z,
+                this.y * other.z - this.z * other.y,
                 this.z * other.x - this.x * other.z,
                 this.x * other.y - this.y * other.x
         );
@@ -186,7 +186,7 @@ public class Vec3 {
 
     @Override
     public String toString() {
-        return String.format("Vec3(%.4f, %.4f, %.4f", x, y, z);
+        return String.format("Vec3(%.4f, %.4f, %.4f)", x, y, z);
     }
 
     @Override
