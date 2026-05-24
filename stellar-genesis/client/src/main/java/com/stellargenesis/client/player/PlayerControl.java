@@ -12,6 +12,7 @@ import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Node;
 import com.stellargenesis.client.StellarGenesisApp;
+import com.stellargenesis.client.render.FrustumDebugRenderer;
 import com.stellargenesis.client.ui.InventoryScreen;
 import com.stellargenesis.core.inventory.Inventory;
 
@@ -70,6 +71,7 @@ public class PlayerControl {
     private StellarGenesisApp app;
 
     private InventoryScreen inventoryScreen;
+    private FrustumDebugRenderer frustumDebug;
 
 
     /**

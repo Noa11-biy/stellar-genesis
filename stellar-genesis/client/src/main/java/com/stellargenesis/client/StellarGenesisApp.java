@@ -23,11 +23,15 @@ import com.stellargenesis.client.player.PlayerControl;
 import com.stellargenesis.client.player.PlayerInteraction;
 import com.stellargenesis.client.player.StaminaSystem;
 import com.stellargenesis.client.render.DayNightCycle;
+import com.stellargenesis.client.render.FrustumDebugRenderer;
+import com.stellargenesis.client.render.FrustumExtractor;
 import com.stellargenesis.client.render.SkyManager;
 import com.stellargenesis.client.screens.PauseScreenState;
 import com.stellargenesis.client.screens.TitleScreenState;
 import com.stellargenesis.client.ui.*;
 import com.stellargenesis.core.inventory.Inventory;
+import com.stellargenesis.core.math.Vec3;
+import com.stellargenesis.core.physics.math.Frustum;
 import com.stellargenesis.core.player.MiningSystem;
 import com.stellargenesis.core.world.*;
 import com.stellargenesis.core.physics.PlanetData;
@@ -60,6 +64,7 @@ public class StellarGenesisApp extends SimpleApplication {
     private Node worldNode;              // noeud parent de tous les chunks
     private Material blockMaterial;      // matériau partagé par tous les blocs
     private int renderDistance = 4;      // en Chunks (4 = 64 blocs de vue)
+    private FrustumDebugRenderer frustumDebug;
 
     // -- État --
     private Vector3f lastUpdatePos;      // dernière position où on a mis à jour les chunks
@@ -220,7 +225,7 @@ public class StellarGenesisApp extends SimpleApplication {
         spawnY = findTerrainHeight(32, 32) + 3f;
 
         // Lancer le chargement async du reste
-        chunkManager.update(32, (int) spawnY, 32);
+        chunkManager.update(32, (int) spawnY, 32, null);
 
 
         staminaSystem = new StaminaSystem(100.0, planetData.getSurfaceGravity());
@@ -231,6 +236,7 @@ public class StellarGenesisApp extends SimpleApplication {
                 planetGravity, spawnY, staminaSystem
         );
 
+
         preloadSpawnChunks();
         System.out.println("=== SPAWN Y: " + spawnY);
 
@@ -239,8 +245,10 @@ public class StellarGenesisApp extends SimpleApplication {
             chunksReady = true;
         });
 
-        chunkManager.update(32, (int) spawnY, 32);
+        chunkManager.update(32, (int) spawnY, 32, null);
         loadInitialChunks();
+
+        frustumDebug = new FrustumDebugRenderer(assetManager, rootNode);
 
         inputManager.setCursorVisible(false);
         mouseInput.setCursorVisible(false);
@@ -464,6 +472,7 @@ public class StellarGenesisApp extends SimpleApplication {
 
     @Override
     public void simpleUpdate(float tpf) {
+
         if (paused) return;
         if (!gameInitialized) return;
 
@@ -774,11 +783,15 @@ public class StellarGenesisApp extends SimpleApplication {
             worldNode.detachChild(child);
         }
 
-        // 3. Demander les chunks manquants — NON BLOQUANT
+        // 3. Extraire le frustum courant de la caméra
+        Frustum frustum = FrustumExtractor.fromCamera(cam);
+
+// 4. Demander les chunks manquants — avec priorité basée sur le frustum
         chunkManager.update(
                 (int) playerPos.x,
                 (int) playerPos.y,
-                (int) playerPos.z
+                (int) playerPos.z,
+                frustum
         );
     }
 

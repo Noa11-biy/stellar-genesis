@@ -130,4 +130,58 @@ class Mat4Test {
             for (int j = 0; j < 4; j++)
                 assertEquals(id.m[i][j], t.m[i][j], EPS);
     }
+
+
+    @Test
+    void identityTimesMatrixEqualsMatrix() {
+        Mat4 t = Mat4.translation(3, 4, 5);
+        Mat4 result = Mat4.identity().multiply(t);
+        // result doit être égal à t
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                assertEquals(t.m[i][j], result.m[i][j], 1e-9);
+    }
+
+    @Test
+    void translationMovesPoint() {
+        Mat4 t = Mat4.translation(10, 0, 0);
+        Vec3 result = t.transformPoint(new Vec3(1, 2, 3));
+        assertEquals(11, result.x, 1e-9);
+        assertEquals(2,  result.y, 1e-9);
+        assertEquals(3,  result.z, 1e-9);
+    }
+
+    @Test
+    void translationDoesNotAffectDirection() {
+        Mat4 t = Mat4.translation(10, 20, 30);
+        Vec3 dir = t.transformDirection(new Vec3(1, 0, 0));
+        assertEquals(1, dir.x, 1e-9); // direction inchangée
+        assertEquals(0, dir.y, 1e-9);
+        assertEquals(0, dir.z, 1e-9);
+    }
+
+    @Test
+    void rotationZ90DegreesMapsXtoY() {
+        Mat4 rot = Mat4.rotationZ(Math.PI / 2);
+        Vec3 result = rot.transformPoint(new Vec3(1, 0, 0));
+        assertEquals(0, result.x, 1e-9);
+        assertEquals(1, result.y, 1e-9);
+        assertEquals(0, result.z, 1e-9);
+    }
+
+    @Test
+    void inverseTimesMatrixEqualsIdentity() {
+        Mat4 t = Mat4.translation(3, 4, 5);
+        Mat4 inv = t.inverse();
+        Mat4 product = t.multiply(inv);
+        Mat4 id = Mat4.identity();
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+                assertEquals(id.m[i][j], product.m[i][j], 1e-9);
+    }
+
+    @Test
+    void determinantOfIdentityIsOne() {
+        assertEquals(1.0, Mat4.identity().determinant(), 1e-9);
+    }
 }

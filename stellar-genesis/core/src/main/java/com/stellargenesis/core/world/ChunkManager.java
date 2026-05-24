@@ -1,5 +1,9 @@
 package com.stellargenesis.core.world;
 
+import com.stellargenesis.core.math.Vec3;
+import com.stellargenesis.core.physics.math.AABB;
+import com.stellargenesis.core.physics.math.Frustum;
+
 import java.util.Map;
 import java.util.concurrent.*;
 
@@ -58,11 +62,18 @@ public class ChunkManager {
          * Les threads sont daemon → ils meurent quand le jeu se ferme,
          * pas besoin de les arrêter manuellement.
          */
-        this.genPool = Executors.newFixedThreadPool(4, r -> {
-            Thread t =new Thread(r, "ChunkGen");
+        java.util.concurrent.ThreadFactory factory = r -> {
+            Thread t = new Thread(r, "ChunkGen");
             t.setDaemon(true);
             return t;
-        });
+        };
+
+        this.genPool = new java.util.concurrent.ThreadPoolExecutor(
+                4, 4,                                                   // corePoolSize = maxPoolSize = 4
+                0L, java.util.concurrent.TimeUnit.MILLISECONDS,         // keepAliveTime (inutile ici)
+                new java.util.concurrent.PriorityBlockingQueue<>(),     // ← LA queue prioritaire
+                factory
+        );
     }
 
     /**
@@ -74,46 +85,73 @@ public class ChunkManager {
      *      - S'il n'est pas chargé et pas en cours de génération → lancer la génération
      *   3. Décharger les chunks trop loin
      */
-    public void update(int playerWorldX, int playerWorldY, int playerWorldZ){
+    public void update(int playerWorldX, int playerWorldY, int playerWorldZ, Frustum frustum){
         ChunkPos center = ChunkPos.fromWorld(playerWorldX, playerWorldY, playerWorldZ);
 
         // --- Étape 1 : Charger les chunks manquants ---
-        requestChunksAround(center);
+        requestChunksAround(center, frustum);
 
         // --- Étape 2 : Décharger les chunks hors rayon ---
         unloadDistantChunks(center);
     }
 
     /**
-     * Parcourir le cube de rendu autour du joueur.
-     *
-     * Le cube va de (center - renderDistance) à (center + renderDistance)
-     * sur les 3 axes. Pour renderDistance=8, ça fait 17³ = 4913 positions
-     * à vérifier. Mais la plupart sont déjà chargées → le check est rapide
-     * grâce à ConcurrentHashMap.containsKey() en O(1).
+     * Demande la génération des chunks autour d'un point central.
+     * Chaque chunk reçoit une priorité selon :
+     *   - sa visibilité dans le frustum
+     *   - sa distance au joueur
      */
-    private void requestChunksAround(ChunkPos center){
+    private void requestChunksAround(ChunkPos center, Frustum frustum) {
         for (int dx = -renderDistance; dx <= renderDistance; dx++) {
-            for (int dy = -renderDistance; dy <= renderDistance; dy++) {
-                for (int dz = -renderDistance; dz <= renderDistance; dz++) {
-                    ChunkPos pos = new ChunkPos(
-                            center.x + dx,
-                            center.y + dy,
-                            center.z + dz
-                    );
+            for (int dz = -renderDistance; dz <= renderDistance; dz++) {
+                for (int dy = -2; dy <= 4; dy++) {
+                    ChunkPos pos = new ChunkPos(center.x + dx, center.y + dy, center.z + dz);
 
-                    // Déjà chargé ? → rien à faire
                     if (loadedChunks.containsKey(pos)) continue;
-
-                    // Déjà en cours de génération ? → pas de doublon
                     if (pendingGeneration.containsKey(pos)) continue;
 
-                    // Lancer la génération asynchrone
+                    // --- Calcul de la priorité ---
+                    int priority = computePriority(pos, center, frustum);
+
                     pendingGeneration.put(pos, Boolean.TRUE);
-                    genPool.submit(() -> generateAsync(pos));
+                    genPool.execute(new PrioritizedChunkTask(priority, () -> generateAsync(pos)));
                 }
             }
         }
+    }
+
+    /**
+     * Calcule la priorité d'un chunk.
+     *   plus petit = plus urgent
+     *   visibles (0-999) passent avant invisibles (1000+)
+     */
+    private int computePriority(ChunkPos pos, ChunkPos center, Frustum frustum){
+        // 1. Distance au joueur en chunks (Manhattan = rapide, pas besoin de sqrt)
+        int distance = Math.abs(pos.x - center.x)
+                + Math.abs(pos.y - center.y)
+                + Math.abs(pos.z - center.z);
+
+        // 2. Visibilité dans le frustum
+        boolean visible;
+        if (frustum == null) {
+            // Pas de frustum (démarrage) → tout est traité comme visible
+            visible = true;
+        } else {
+            Vec3 min = new Vec3(
+                    pos.x * Chunk.SIZE,
+                    pos.y * Chunk.SIZE,
+                    pos.z * Chunk.SIZE
+            );
+            Vec3 max = new Vec3(
+                    min.x + Chunk.SIZE,
+                    min.y + Chunk.SIZE,
+                    min.z + Chunk.SIZE
+            );
+            visible = frustum.intersects(new AABB(min, max));
+        }
+
+        // 3. Combinaison : visibles (0-999) avant invisibles (1000+)
+        return (visible ? 0 : 1000) + distance;
     }
 
     /**

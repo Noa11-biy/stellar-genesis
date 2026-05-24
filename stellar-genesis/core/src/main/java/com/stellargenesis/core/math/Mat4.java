@@ -113,7 +113,9 @@ public class Mat4 {
         double y = m[1][0]*v.x + m[1][1]*v.y + m[1][2]*v.z + m[1][3];
         double z = m[2][0]*v.x + m[2][1]*v.y + m[2][2]*v.z + m[2][3];
         double w = m[3][0]*v.x + m[3][1]*v.y + m[3][2]*v.z + m[3][3];
-        if(w != 0 && w != 1){x /= w; y /= w; z /= w;}
+        if (Math.abs(w) > 1e-10 && Math.abs(w - 1.0) > 1e-10) {
+            x /= w; y /= w; z /= w;
+        }
         return new Vec3(x, y, z);
     }
 
@@ -178,6 +180,45 @@ public class Mat4 {
         }
         return r;
     }
+
+
+    /**
+     * Matrice de projection perspective.
+     * @param fovY  champ de vision vertical (radians)
+     * @param aspect ratio largeur/hauteur
+     * @param near distance du plan proche (> 0)
+     * @param far  distance du plan lointain (> near)
+     */
+    public static Mat4 perspective(double fovY, double aspect, double near, double far) {
+        double f = 1.0 / Math.tan(fovY / 2.0);
+        Mat4 r = new Mat4();
+        r.m[0][0] = f / aspect;
+        r.m[1][1] = f;
+        r.m[2][2] = (far + near) / (near - far);
+        r.m[2][3] = (2 * far * near) / (near - far);
+        r.m[3][2] = -1;
+        return r;
+    }
+
+    /**
+     * Matrice de vue : caméra à `eye` regardant `target` avec `up` comme haut.
+     */
+    public static Mat4 lookAt(Vec3 eye, Vec3 target, Vec3 up) {
+        Vec3 f = target.sub(eye).normalize();          // forward
+        Vec3 s = f.cross(up).normalize();              // side (right)
+        Vec3 u = s.cross(f);                           // up corrigé
+
+        Mat4 r = identity();
+        r.m[0][0] = s.x;  r.m[0][1] = s.y;  r.m[0][2] = s.z;
+        r.m[1][0] = u.x;  r.m[1][1] = u.y;  r.m[1][2] = u.z;
+        r.m[2][0] = -f.x; r.m[2][1] = -f.y; r.m[2][2] = -f.z;
+        r.m[0][3] = -s.dot(eye);
+        r.m[1][3] = -u.dot(eye);
+        r.m[2][3] =  f.dot(eye);
+        return r;
+    }
+
+
 
     @Override
     public String toString() {
