@@ -204,8 +204,6 @@ public class StellarGenesisApp extends SimpleApplication {
             System.out.println("[Debug] Frustum toggled");
         });
 
-        inputContextManager.pushContext(InputContext.GAMEPLAY);
-
         // ════════════════════════════════════════════
         //  Bindings GAMEPLAY — mouvement (HOLD)
         // ════════════════════════════════════════════
@@ -214,6 +212,13 @@ public class StellarGenesisApp extends SimpleApplication {
         inputBindings.bind(GameAction.MOVE_LEFT,     ActionType.HOLD, KeyInput.KEY_A,      InputContext.GAMEPLAY);
         inputBindings.bind(GameAction.MOVE_RIGHT,    ActionType.HOLD, KeyInput.KEY_D,      InputContext.GAMEPLAY);
         inputBindings.bind(GameAction.SPRINT,        ActionType.HOLD, KeyInput.KEY_LSHIFT, InputContext.GAMEPLAY);
+        // MINE = clic gauche maintenu (lu par polling dans update)
+        inputBindings.bindMouseButton(GameAction.MINE, ActionType.HOLD,
+                MouseInput.BUTTON_LEFT, InputContext.GAMEPLAY);
+
+        // PLACE_BLOCK = clic droit ponctuel (callback)
+        inputBindings.bindMouseButton(GameAction.PLACE_BLOCK, ActionType.TRIGGER,
+                MouseInput.BUTTON_RIGHT, InputContext.GAMEPLAY);
 
         // ════════════════════════════════════════════
         //  Bindings GAMEPLAY — actions (TRIGGER)
@@ -228,7 +233,7 @@ public class StellarGenesisApp extends SimpleApplication {
         inputBindings.bind(GameAction.CLOSE_INVENTORY, ActionType.TRIGGER,
                 KeyInput.KEY_ESCAPE, InputContext.INVENTORY);
 
-        inputBindings.bindMouseButton(GameAction.INVENTORY_CLICK, ActionType.TRIGGER,
+        inputBindings.bindMouseButton(GameAction.INVENTORY_CLICK, ActionType.BUTTON,
                 MouseInput.BUTTON_LEFT, InputContext.INVENTORY);
 
         // PRESS → démarrer le drag
@@ -245,8 +250,14 @@ public class StellarGenesisApp extends SimpleApplication {
         });
 
         // ──────── Pause ────────
+
+        // ESC en GAMEPLAY → pause
         inputBindings.bind(GameAction.PAUSE, ActionType.TRIGGER,
                 KeyInput.KEY_ESCAPE, InputContext.GAMEPLAY);
+
+        // ESC en MENU → dépause
+        inputBindings.bind(GameAction.RESUME, ActionType.TRIGGER,
+                KeyInput.KEY_ESCAPE, InputContext.MENU);
 
 
         // ════════════════════════════════════════════
@@ -260,10 +271,14 @@ public class StellarGenesisApp extends SimpleApplication {
         // ════════════════════════════════════════════
         inputBindings.onTrigger(GameAction.TOGGLE_INVENTORY, () -> playerControl.toggleInventory());
         inputBindings.onTrigger(GameAction.CLOSE_INVENTORY,  () -> playerControl.toggleInventory());
-        inputBindings.onTrigger(GameAction.PAUSE,            () -> togglePause());
-        inputBindings.onTrigger(GameAction.INVENTORY_CLICK,  () -> {
-            // TODO : à brancher quand InventoryScreen aura une méthode handleClick()
-            System.out.println("[Inventory] Click");
+        inputBindings.onTrigger(GameAction.PAUSE, () -> {
+            System.out.println("[PAUSE callback] triggered");
+            pauseGame();
+        });
+
+        inputBindings.onTrigger(GameAction.RESUME, () -> {
+            System.out.println("[RESUME callback] triggered");
+            resumeGame();
         });
 
 
@@ -366,7 +381,7 @@ public class StellarGenesisApp extends SimpleApplication {
         inventory.addItem(BlockType.STONE, 64);
 
         playerInteraction = new PlayerInteraction(
-                cam, worldNode, inputManager,
+                cam, worldNode, inputBindings,
                 chunkManager, miningSystem, inventory
         );
 
@@ -765,6 +780,7 @@ public class StellarGenesisApp extends SimpleApplication {
     }
 
     public void togglePause() {
+        System.out.println("[togglePause] called, gameInitialized=" + gameInitialized + ", paused=" + paused);
         if (!gameInitialized) return;
         if (paused) resumeGame();
         else pauseGame();
@@ -777,6 +793,8 @@ public class StellarGenesisApp extends SimpleApplication {
         playerControl.setEnabled(false);
         bulletAppState.setEnabled(false);
         inputManager.setCursorVisible(true);
+
+        inputContextManager.pushContext(InputContext.MENU);
 
         stateManager.attach(new PauseScreenState());
         System.out.println("[App] Pause.");
@@ -792,6 +810,9 @@ public class StellarGenesisApp extends SimpleApplication {
         playerControl.setEnabled(true);
         bulletAppState.setEnabled(true);
         inputManager.setCursorVisible(false);
+
+        inputContextManager.popContext();
+
         System.out.println("[App] Reprise.");
     }
 

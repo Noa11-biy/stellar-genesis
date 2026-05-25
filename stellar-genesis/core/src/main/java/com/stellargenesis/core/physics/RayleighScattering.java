@@ -178,10 +178,10 @@ public class RayleighScattering {
         skyG = Math.min(1f, Math.max(0f, skyG));
         skyB = Math.min(1f, Math.max(0f, skyB));
 
-        System.out.println("sunElev=" + sunElevation
-                + " tau_RGB=[" + tau_R + "," + tau_G + "," + tau_B + "]"
-                + " star_RGB=[" + starR + "," + starG + "," + starB + "]"
-                + " sky_RGB=[" + skyR + "," + skyG + "," + skyB + "]");
+//        System.out.println("sunElev=" + sunElevation
+//                + " tau_RGB=[" + tau_R + "," + tau_G + "," + tau_B + "]"
+//                + " star_RGB=[" + starR + "," + starG + "," + starB + "]"
+//                + " sky_RGB=[" + skyR + "," + skyG + "," + skyB + "]");
 
         return new float[]{skyR, skyG, skyB};
     }

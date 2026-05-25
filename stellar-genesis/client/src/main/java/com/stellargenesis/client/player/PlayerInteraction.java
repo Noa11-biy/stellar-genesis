@@ -10,12 +10,16 @@ import com.jme3.math.Ray;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Node;
+import com.stellargenesis.client.input.GameAction;
+import com.stellargenesis.client.input.InputBindings;
 import com.stellargenesis.core.inventory.Inventory;
 import com.stellargenesis.core.player.MiningSystem;
 import com.stellargenesis.core.world.BlockType;
 import com.stellargenesis.core.world.Chunk;
 import com.stellargenesis.core.world.ChunkManager;
 import com.stellargenesis.core.world.ChunkPos;
+
+import java.util.Objects;
 
 
 /**
@@ -45,22 +49,26 @@ public class PlayerInteraction {
     private ChunkManager chunkManager;
     private MiningSystem miningSystem;
     private Inventory inventory;
+    private final InputBindings inputBindings;
 
     // État
-    private boolean mouseHeld = false;      // clic gauche maintenu
+
     private Vector3f targetBlockPos = null; // position monde du bloc visé
     private BlockType targetBlockType = null;
     private boolean enabled = true;
 
-    public PlayerInteraction(Camera cam, Node worldNode, InputManager inputManager, ChunkManager chunkManager,
-                             MiningSystem miningSystem, Inventory inventory){
+    public PlayerInteraction(Camera cam, Node worldNode,
+                             InputBindings inputBindings,
+                             ChunkManager chunkManager, MiningSystem miningSystem, Inventory inventory){
         this.cam = cam;
         this.worldNode = worldNode;
+        this.inputBindings = Objects.requireNonNull(inputBindings);
         this.chunkManager = chunkManager;
         this.miningSystem = miningSystem;
         this.inventory = inventory;
 
-        setupInput(inputManager);
+        // PLACE_BLOCK = action ponctuelle → callback
+        inputBindings.onTrigger(GameAction.PLACE_BLOCK, this::placeBlock);
     }
 
     private void setupInput(InputManager inputManager) {
@@ -163,33 +171,29 @@ public class PlayerInteraction {
      */
     public void update(float tpf){
         if (!enabled) return;
-        if (mouseHeld) {
-            // --- RAYCAST ---
-            RaycastResult hit = raycast();
 
+        if (inputBindings.isHeld(GameAction.MINE)) {
+            RaycastResult hit = raycast();
             if (hit != null) {
-                // Vérifier si on vise toujours le même bloc
                 if (targetBlockPos == null || !targetBlockPos.equals(hit.blockWorldPos)) {
-                    // Nouveau bloc -> recommencer
                     targetBlockPos = hit.blockWorldPos;
                     targetBlockType = hit.blockType;
                     miningSystem.startMining(hit.blockType);
                 }
-
-                // --- TICK MINAGE ---
                 boolean broken = miningSystem.tick(tpf);
-
-                if (broken) {
-                    onBlockBroken(hit);
-                }
+                if (broken) onBlockBroken(hit);
             } else {
-                // On ne vise rien arrêter
                 miningSystem.stopMining();
                 targetBlockPos = null;
                 targetBlockType = null;
             }
-        }else {
-            // Pas de minage regen endurance
+        } else {
+            // Rien de pressé → si on minait, arrêter proprement
+            if (targetBlockPos != null) {
+                miningSystem.stopMining();
+                targetBlockPos = null;
+                targetBlockType = null;
+            }
             miningSystem.regenStamina(tpf);
         }
     }

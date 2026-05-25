@@ -3,11 +3,6 @@ package com.stellargenesis.client.player;
 import com.jme3.bullet.BulletAppState;
 import com.jme3.bullet.control.BetterCharacterControl;
 import com.jme3.input.InputManager;
-import com.jme3.input.KeyInput;
-import com.jme3.input.MouseInput;
-import com.jme3.input.RawInputListener;
-import com.jme3.input.controls.*;
-import com.jme3.input.event.*;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Node;
@@ -15,7 +10,6 @@ import com.stellargenesis.client.StellarGenesisApp;
 import com.stellargenesis.client.input.GameAction;
 import com.stellargenesis.client.input.InputBindings;
 import com.stellargenesis.client.input.InputContextManager;
-import com.stellargenesis.client.render.FrustumDebugRenderer;
 import com.stellargenesis.client.ui.InventoryScreen;
 import com.stellargenesis.core.inventory.Inventory;
 
@@ -63,8 +57,7 @@ public class PlayerControl {
     /** Multiplicateur pour la souris analogique jME (compense la normalisation interne). */
     private static final float MOUSE_AXIS_SCALE = 3f;
 
-    // === État du joueur ===
-    private boolean inventoryOpen = false;
+    // === État du joueur ==
     private float yaw = 0;      // rotation horizontale (gauche/droite)
     private float pitch = 0;    // rotation verticale (haut/bas)
 
@@ -75,7 +68,6 @@ public class PlayerControl {
     private StellarGenesisApp app;
 
     private InventoryScreen inventoryScreen;
-    private FrustumDebugRenderer frustumDebug;
 
 
     /**
@@ -150,7 +142,7 @@ public class PlayerControl {
 
         // Saut : v0 constant (même force musculaire)
         // v0 = sqrt(2 x g_Terre x h_base)
-        jumpImpulse = (float) Math.sqrt(2.2 * 9.81f * BASE_JUMP_HEIGHT);
+        jumpImpulse = (float) Math.sqrt(2.0 * 9.81f * BASE_JUMP_HEIGHT);
         // ≈ 4.85 m/s
 
         System.out.println("=== Physique Joueur ===");
@@ -176,20 +168,20 @@ public class PlayerControl {
 
 
     public void toggleInventory() {
-        inventoryOpen = !inventoryOpen;
-        inputManager.setCursorVisible(inventoryOpen);
+        boolean opening = !isInventoryOpen();   // lecture via la méthode
+        inputManager.setCursorVisible(opening);
 
-        if (inventoryOpen) {
+        if (opening) {
             contextManager.pushContext(com.stellargenesis.client.input.InputContext.INVENTORY);
         } else {
-            contextManager.popContext();   // dépile INVENTORY → retour à GAMEPLAY
+            contextManager.popContext();
         }
 
         if (inventoryScreen != null) {
             inventoryScreen.toggle();
         }
 
-        System.out.println("[PlayerControl] Inventory " + (inventoryOpen ? "OPEN" : "CLOSED"));
+        System.out.println("[PlayerControl] Inventory " + (opening ? "OPEN" : "CLOSED"));
     }
 
 
@@ -242,9 +234,8 @@ public class PlayerControl {
         // On ajoute 1.7 pour les yeux
         Vector3f eyePos = playerNode.getWorldTranslation().add(0, 1.6f, 0);
         cam.setLocation(eyePos);
-//        System.out.println("PlayerY=" + playerNode.getWorldTranslation().y);
 
-        if (inventoryOpen && inventoryScreen != null && inventoryScreen.isDragging()) {
+        if (isInventoryOpen() && inventoryScreen != null && inventoryScreen.isDragging()) {
             com.jme3.math.Vector2f mouse = inputManager.getCursorPosition();
             inventoryScreen.onMouseMove(mouse.x, mouse.y);
         }
@@ -317,5 +308,7 @@ public class PlayerControl {
     public boolean isSprinting() {
         return sprintAllowed && inputBindings.isHeld(GameAction.SPRINT);
     }
-    public boolean isInventoryOpen() { return inventoryOpen; }
+    public boolean isInventoryOpen() {
+        return contextManager.isActive(com.stellargenesis.client.input.InputContext.INVENTORY);
+    }
 }
