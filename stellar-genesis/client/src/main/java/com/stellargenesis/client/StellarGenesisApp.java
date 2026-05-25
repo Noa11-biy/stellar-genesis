@@ -5,9 +5,11 @@ import com.jme3.bullet.BulletAppState;
 import com.jme3.bullet.collision.shapes.MeshCollisionShape;
 import com.jme3.bullet.control.RigidBodyControl;
 import com.jme3.input.KeyInput;
+import com.jme3.input.MouseInput;
 import com.jme3.material.Material;
 import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Mesh;
@@ -19,6 +21,7 @@ import com.jme3.system.AppSettings;
 
 import com.stellargenesis.client.audio.OSTManager;
 import com.stellargenesis.client.audio.SFXManager;
+import com.stellargenesis.client.input.*;
 import com.stellargenesis.client.player.PlayerControl;
 import com.stellargenesis.client.player.PlayerInteraction;
 import com.stellargenesis.client.player.StaminaSystem;
@@ -77,6 +80,8 @@ public class StellarGenesisApp extends SimpleApplication {
     private PlayerInteraction playerInteraction;
     private StaminaSystem staminaSystem;
     private Inventory inventory;
+    private InputContextManager inputContextManager;
+    private InputBindings inputBindings;
 
 
     // -- UI --
@@ -181,6 +186,88 @@ public class StellarGenesisApp extends SimpleApplication {
         if (gameInitialized) return; // sécurité anti double-init
         gameInitialized = true;
 
+        // ═══════════════════════════════════════════════
+        //  Système d'inputs
+        // ═══════════════════════════════════════════════
+        inputContextManager = new InputContextManager();
+        inputBindings = new InputBindings(inputManager, inputContextManager);
+
+        // Le jeu démarre en contexte GAMEPLAY
+        inputContextManager.pushContext(InputContext.GAMEPLAY);
+
+        // Bind F3 → toggle du frustum debug (contexte DEBUG = toujours actif)
+        inputBindings.bind(GameAction.TOGGLE_FRUSTUM_DEBUG, ActionType.TRIGGER,
+                KeyInput.KEY_F3, InputContext.DEBUG);
+
+        inputBindings.onTrigger(GameAction.TOGGLE_FRUSTUM_DEBUG, () -> {
+            frustumDebug.toggle(cam);
+            System.out.println("[Debug] Frustum toggled");
+        });
+
+        inputContextManager.pushContext(InputContext.GAMEPLAY);
+
+        // ════════════════════════════════════════════
+        //  Bindings GAMEPLAY — mouvement (HOLD)
+        // ════════════════════════════════════════════
+        inputBindings.bind(GameAction.MOVE_FORWARD,  ActionType.HOLD, KeyInput.KEY_W,      InputContext.GAMEPLAY);
+        inputBindings.bind(GameAction.MOVE_BACKWARD, ActionType.HOLD, KeyInput.KEY_S,      InputContext.GAMEPLAY);
+        inputBindings.bind(GameAction.MOVE_LEFT,     ActionType.HOLD, KeyInput.KEY_A,      InputContext.GAMEPLAY);
+        inputBindings.bind(GameAction.MOVE_RIGHT,    ActionType.HOLD, KeyInput.KEY_D,      InputContext.GAMEPLAY);
+        inputBindings.bind(GameAction.SPRINT,        ActionType.HOLD, KeyInput.KEY_LSHIFT, InputContext.GAMEPLAY);
+
+        // ════════════════════════════════════════════
+        //  Bindings GAMEPLAY — actions (TRIGGER)
+        // ════════════════════════════════════════════
+        inputBindings.bind(GameAction.JUMP, ActionType.TRIGGER, KeyInput.KEY_SPACE, InputContext.GAMEPLAY);
+        inputBindings.onTrigger(GameAction.JUMP, () -> playerControl.jump());
+
+        // ──────── Inventaire ────────
+        inputBindings.bind(GameAction.TOGGLE_INVENTORY, ActionType.TRIGGER,
+                KeyInput.KEY_TAB, InputContext.GAMEPLAY);
+
+        inputBindings.bind(GameAction.CLOSE_INVENTORY, ActionType.TRIGGER,
+                KeyInput.KEY_ESCAPE, InputContext.INVENTORY);
+
+        inputBindings.bindMouseButton(GameAction.INVENTORY_CLICK, ActionType.TRIGGER,
+                MouseInput.BUTTON_LEFT, InputContext.INVENTORY);
+
+        // PRESS → démarrer le drag
+        inputBindings.onPress(GameAction.INVENTORY_CLICK, () -> {
+            Vector2f cursor = inputBindings.getCursorPosition();
+            invScreen.onMouseDown(cursor.x, cursor.y, inventory);
+        });
+
+        // RELEASE → terminer le drag (swap ou cancel)
+        inputBindings.onRelease(GameAction.INVENTORY_CLICK, () -> {
+            Vector2f cursor = inputBindings.getCursorPosition();
+            invScreen.onMouseUp(cursor.x, cursor.y, inventory);
+            invScreen.refresh(inventory);   // au cas où le swap a eu lieu
+        });
+
+        // ──────── Pause ────────
+        inputBindings.bind(GameAction.PAUSE, ActionType.TRIGGER,
+                KeyInput.KEY_ESCAPE, InputContext.GAMEPLAY);
+
+
+        // ════════════════════════════════════════════
+        //  Bindings GAMEPLAY — axes (souris caméra)
+        // ════════════════════════════════════════════
+        inputBindings.bindAxis(GameAction.LOOK_X, MouseInput.AXIS_X, InputContext.GAMEPLAY);
+        inputBindings.bindAxis(GameAction.LOOK_Y, MouseInput.AXIS_Y, InputContext.GAMEPLAY);
+
+        // ════════════════════════════════════════════
+        //  Callbacks TRIGGER
+        // ════════════════════════════════════════════
+        inputBindings.onTrigger(GameAction.TOGGLE_INVENTORY, () -> playerControl.toggleInventory());
+        inputBindings.onTrigger(GameAction.CLOSE_INVENTORY,  () -> playerControl.toggleInventory());
+        inputBindings.onTrigger(GameAction.PAUSE,            () -> togglePause());
+        inputBindings.onTrigger(GameAction.INVENTORY_CLICK,  () -> {
+            // TODO : à brancher quand InventoryScreen aura une méthode handleClick()
+            System.out.println("[Inventory] Click");
+        });
+
+
+
         // Le curseur redevient invisible (on est en FPS maintenant)
         inputManager.setCursorVisible(false);
 
@@ -233,6 +320,7 @@ public class StellarGenesisApp extends SimpleApplication {
         playerControl = new PlayerControl(
                 this,
                 rootNode, bulletAppState, cam, inputManager,
+                inputBindings, inputContextManager,
                 planetGravity, spawnY, staminaSystem
         );
 
@@ -591,6 +679,12 @@ public class StellarGenesisApp extends SimpleApplication {
 
         staminaBar.update((float) staminaSystem.getPercent());
 
+        // Suivi souris pendant drag d'inventaire
+        if (invScreen.isDragging()) {
+            Vector2f cursor = inputManager.getCursorPosition();
+            invScreen.onMouseMove(cursor.x, cursor.y);
+        }
+
         if (playerControl.isInventoryOpen()) {
             invScreen.refresh(inventory);
             return; // Ne pas mettre à jour le reste de l'UI
@@ -719,6 +813,15 @@ public class StellarGenesisApp extends SimpleApplication {
         if (playerControl != null) {
             playerControl.cleanup();
             playerControl = null;
+        }
+
+        if (inputBindings != null) {
+            inputBindings.cleanup();
+            inputBindings = null;
+        }
+        if (inputContextManager != null) {
+            inputContextManager.clear();
+            inputContextManager = null;
         }
 
         // 3. Détacher la physique

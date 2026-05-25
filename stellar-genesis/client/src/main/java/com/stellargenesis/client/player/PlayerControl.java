@@ -12,9 +12,14 @@ import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Node;
 import com.stellargenesis.client.StellarGenesisApp;
+import com.stellargenesis.client.input.GameAction;
+import com.stellargenesis.client.input.InputBindings;
+import com.stellargenesis.client.input.InputContextManager;
 import com.stellargenesis.client.render.FrustumDebugRenderer;
 import com.stellargenesis.client.ui.InventoryScreen;
 import com.stellargenesis.core.inventory.Inventory;
+
+import java.util.Objects;
 
 /**
  * Contrôle du joueur avec physique réaliste.
@@ -37,6 +42,8 @@ public class PlayerControl {
     private Node playerNode;
     private Camera cam;
     private InputManager inputManager;
+    private InputBindings inputBindings;
+    private InputContextManager contextManager;
     private boolean sprintAllowed = true;
     private StaminaSystem staminaSystem;
     private Inventory inventory;
@@ -53,19 +60,16 @@ public class PlayerControl {
     private static final float BASE_SPRINT_SPEED = 9.0f;
     private static final float BASE_JUMP_HEIGHT = 1.2f;     // mètres dur Terre
     private static final float MOUSE_SENSITIVITY = 1.0f;
+    /** Multiplicateur pour la souris analogique jME (compense la normalisation interne). */
+    private static final float MOUSE_AXIS_SCALE = 3f;
 
     // === État du joueur ===
-    private boolean forward, backward, left, right;
-    private boolean sprinting;
     private boolean inventoryOpen = false;
     private float yaw = 0;      // rotation horizontale (gauche/droite)
     private float pitch = 0;    // rotation verticale (haut/bas)
 
     // === État actif/inactif ===
     private boolean enabled = true;
-
-    // === Listener souris (extrait pour pouvoir le cleanup) ===
-    private RawInputListener rawInputListener;
 
     // === Référence à l'app pour déclencher la pause ===
     private StellarGenesisApp app;
@@ -78,12 +82,16 @@ public class PlayerControl {
      * @param gravity gravité de surface en m/s² (ex: 9.81 pour Terre, 3.72 pour Mars)
      */
     public PlayerControl(StellarGenesisApp app, Node rootNode, BulletAppState bulletState,
-                         Camera cam, InputManager inputManager, float gravity, float spawnY, StaminaSystem staminaSystem){
+                         Camera cam, InputManager inputManager,
+                         InputBindings inputBindings, InputContextManager contextManager,
+                         float gravity, float spawnY, StaminaSystem staminaSystem){
         this.app = app;
         this.cam = cam;
         this.inputManager = inputManager;
         this.gravity = gravity;
         this.staminaSystem = staminaSystem;
+        this.inputBindings = Objects.requireNonNull(inputBindings);
+        this.contextManager = contextManager;
 
         // Calculer les paramètres adaptés à la gravité
         calculatePhysicsParams();
@@ -110,8 +118,7 @@ public class PlayerControl {
         // Positions initiala (au-dessus du terrain)
         characterControl.warp(new Vector3f(32, spawnY + 10, 32));
 
-        // Enregistrer les touches
-        setupKeys();
+        inputManager.setCursorVisible(false);
     }
 
     /**
@@ -154,120 +161,8 @@ public class PlayerControl {
         System.out.println("Hauteur saut    : " + jumpHeight + " m");
     }
 
-    /**
-     * Enregistrement des touches ZQSD + Espace + Shift + Souris
-     */
-    private void setupKeys(){
-        System.out.println("[PlayerControl] setupKeys appelé, instance=" + this.hashCode());
-        // Mappings clavier
-        inputManager.addMapping("Forward", new KeyTrigger(KeyInput.KEY_W));
-        inputManager.addMapping("Backward", new KeyTrigger(KeyInput.KEY_S));
-        inputManager.addMapping("Left", new KeyTrigger(KeyInput.KEY_A));
-        inputManager.addMapping("Right", new KeyTrigger(KeyInput.KEY_D));
-        inputManager.addMapping("Jump", new KeyTrigger(KeyInput.KEY_SPACE));
-        inputManager.addMapping("Sprint", new KeyTrigger(KeyInput.KEY_LSHIFT));
-        inputManager.addMapping("Inventory", new KeyTrigger(KeyInput.KEY_TAB));
-        inputManager.addMapping("InventoryClick", new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
-        inputManager.addMapping("Pause", new KeyTrigger(KeyInput.KEY_ESCAPE));;
-
-        // Listener pour les touches (pressed/released)
-        inputManager.addListener(actionListener,
-                "Forward", "Backward", "Left", "Right", "Jump", "Sprint",
-                "Inventory","Pause", "InventoryClick");
-
-        // === SOURIS — RawInputListener (capture les deltas bruts) ===
-        rawInputListener = new RawInputListener() {
-            @Override
-            public void onMouseMotionEvent(MouseMotionEvent evt) {
-                if (!enabled) return;
-                if (inventoryOpen) return;
-                float dx = evt.getDX();
-                float dy = evt.getDY();
-                yaw   -= dx * MOUSE_SENSITIVITY * 0.002f;
-                pitch += dy * MOUSE_SENSITIVITY * 0.002f;
-                pitch = Math.max(-1.5f, Math.min(1.5f, pitch));
-                inputManager.setCursorVisible(false);
-                System.out.println("[PlayerControl] mouse dx=" + dx + " enabled=" + enabled);
-            }
-
-            @Override public void beginInput() {}
-            @Override public void endInput() {}
-            @Override public void onJoyAxisEvent(JoyAxisEvent evt) {}
-            @Override public void onJoyButtonEvent(JoyButtonEvent evt) {}
-            @Override public void onMouseButtonEvent(MouseButtonEvent evt) {}
-            @Override public void onKeyEvent(KeyInputEvent evt) {}
-            @Override public void onTouchEvent(TouchEvent evt) {}
-        };
-        inputManager.addRawInputListener(rawInputListener);
-    }
-
-    /**
-     * ActionListener : détecte appui ET relâchement des touches.
-     * isPressed=true quand on appuie, false quand on relâche.
-     */
-    private final ActionListener actionListener = (name, isPressed, tpf) -> {
-        // Échap fonctionne MÊME quand enabled=false (pour pouvoir dépauser)
-        if (name.equals("Pause") && isPressed) {
-            if (inventoryOpen) {
-                toggleInventory();  // Échap ferme l'inventaire en priorité
-            } else {
-                app.togglePause();  // sinon pause/reprise
-            }
-            return;
-        }
-
-        if (!enabled) return;
-        switch (name){
-            case "Forward": forward = isPressed; break;
-            case "Backward": backward = isPressed; break;
-            case "Left": left = isPressed; break;
-            case "Right": right = isPressed; break;
-            case "Sprint": sprinting = isPressed; break;
-            case "Jump":
-                if (isPressed && characterControl.isOnGround()) {
-                    if (staminaSystem.tryJump()) {
-                        characterControl.jump();
-                    }
-                }
-                break;
-            case "Inventory":
-                if (isPressed) toggleInventory();
-                break;
-
-            case "InventoryClick":
-                System.out.println("[Click] pressed=" + isPressed + " invOpen=" + inventoryOpen + " screen=" + (inventoryScreen != null));
-                if (inventoryOpen && inventoryScreen != null) {
-                    com.jme3.math.Vector2f pos = inputManager.getCursorPosition();
-                    if (isPressed) {
-                        // Bouton enfoncé → démarrer drag
-                        inventoryScreen.onMouseDown(pos.x, pos.y, inventory);
-                    } else {
-                        // Bouton relâché → terminer drag (drop)
-                        inventoryScreen.onMouseUp(pos.x, pos.y, inventory);
-                    }
-                }
-                break;
-        }
-    };
-
-    /**
-    * AnalogListener : reçoit la valeur du mouvement de souris.
-    * value = combien la souris a bougé ce frame.
-     */
-    private final AnalogListener analogListener = (name, value, tpf) -> {
-        switch (name){
-            case "MouseLeft" : yaw += value * MOUSE_SENSITIVITY; break;
-            case "MouseRight" : yaw -= value * MOUSE_SENSITIVITY; break;
-            case "MouseUp" : pitch += value * MOUSE_SENSITIVITY; break;
-            case "MouseDown" : pitch -= value * MOUSE_SENSITIVITY; break;
-        }
-        // Limiter le pitch pour pas retourner la caméra
-        pitch = Math.max(-1.5f, Math.min(1.5f, pitch)); // ~±85°
-    };
-
     public void setSprintAllowed(boolean allowed) {
         this.sprintAllowed = allowed;
-        if (!allowed && sprinting) sprinting = false;
     }
 
     public void teleportTo(Vector3f pos) {
@@ -280,12 +175,21 @@ public class PlayerControl {
     }
 
 
-    private void toggleInventory() {
+    public void toggleInventory() {
         inventoryOpen = !inventoryOpen;
         inputManager.setCursorVisible(inventoryOpen);
+
+        if (inventoryOpen) {
+            contextManager.pushContext(com.stellargenesis.client.input.InputContext.INVENTORY);
+        } else {
+            contextManager.popContext();   // dépile INVENTORY → retour à GAMEPLAY
+        }
+
         if (inventoryScreen != null) {
             inventoryScreen.toggle();
         }
+
+        System.out.println("[PlayerControl] Inventory " + (inventoryOpen ? "OPEN" : "CLOSED"));
     }
 
 
@@ -297,6 +201,15 @@ public class PlayerControl {
      * → Pas de déplacement absolu (sinon Z irait toujours au nord)
      */
     public void update(float tpf){
+
+        // ──────── Rotation caméra via axes souris ────────
+        float lookX = inputBindings.consumeAxis(GameAction.LOOK_X);
+        float lookY = inputBindings.consumeAxis(GameAction.LOOK_Y);
+
+        yaw   -= lookX * MOUSE_SENSITIVITY * MOUSE_AXIS_SCALE;
+        pitch += lookY * MOUSE_SENSITIVITY * MOUSE_AXIS_SCALE;
+        pitch = Math.max(-1.5f, Math.min(1.5f, pitch));
+
         if (!enabled) return;
 
         // 1. Mettre à jour la rotation caméra
@@ -309,13 +222,13 @@ public class PlayerControl {
         Vector3f camDir = cam.getDirection().clone().setY(0).normalizeLocal();
         Vector3f camLeft = cam.getLeft().clone().setY(0).normalizeLocal();
 
-        float speed = sprinting ? BASE_SPRINT_SPEED * sprintMultiplier : walkSpeed;
+        float speed = isSprinting() ? BASE_SPRINT_SPEED * sprintMultiplier : walkSpeed;
 
 
-        if (forward) walkDirection.addLocal(camDir);
-        if (backward) walkDirection.addLocal(camDir.negate());
-        if (left) walkDirection.addLocal(camLeft);
-        if (right) walkDirection.addLocal(camLeft.negate());
+        if (inputBindings.isHeld(GameAction.MOVE_FORWARD))  walkDirection.addLocal(camDir);
+        if (inputBindings.isHeld(GameAction.MOVE_BACKWARD)) walkDirection.addLocal(camDir.negate());
+        if (inputBindings.isHeld(GameAction.MOVE_LEFT))     walkDirection.addLocal(camLeft);
+        if (inputBindings.isHeld(GameAction.MOVE_RIGHT))    walkDirection.addLocal(camLeft.negate());
 
         // Normaliser pour pas aller plus vite en diagonale
         if (walkDirection.lengthSquared() > 0){
@@ -338,16 +251,28 @@ public class PlayerControl {
     }
 
     public boolean isMoving() {
-        return forward || backward || left || right;
+        return inputBindings.isHeld(GameAction.MOVE_FORWARD)
+                || inputBindings.isHeld(GameAction.MOVE_BACKWARD)
+                || inputBindings.isHeld(GameAction.MOVE_LEFT)
+                || inputBindings.isHeld(GameAction.MOVE_RIGHT);
     }
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
         if (!enabled) {
-            // Stopper tous les mouvements en cours
-            forward = backward = left = right = false;
-            sprinting = false;
             characterControl.setWalkDirection(Vector3f.ZERO);
+        }
+    }
+
+    /**
+     * Déclenche un saut si le joueur est au sol.
+     * L'impulsion appliquée dépend de la gravité de la planète (calculée dans
+     * {@link #calculatePhysicsParams()}).
+     */
+    public void jump() {
+        if (!enabled) return;
+        if (characterControl.isOnGround()) {
+            characterControl.jump();
         }
     }
 
@@ -360,20 +285,6 @@ public class PlayerControl {
      * À appeler quand on quitte la partie.
      */
     public void cleanup() {
-        String[] mappings = {
-                "Forward", "Backward", "Left", "Right",
-                "Jump", "Sprint", "Inventory", "InventoryClick",
-                "MouseLeft", "MouseRight", "MouseUp", "MouseDown",
-                "Pause"
-        };
-        for (String m : mappings) {
-            if (inputManager.hasMapping(m)) inputManager.deleteMapping(m);
-        }
-        inputManager.removeListener(actionListener);
-        if (rawInputListener != null) {
-            inputManager.removeRawInputListener(rawInputListener);
-            rawInputListener = null;
-        }
         enabled = false;
     }
     /**
@@ -403,6 +314,8 @@ public class PlayerControl {
         return (jumpImpulse * jumpImpulse) / (2 * gravity);
     }
     public void setSprintMultiplier(float m) { this.sprintMultiplier = m; }
-    public boolean isSprinting() { return sprinting; }
+    public boolean isSprinting() {
+        return sprintAllowed && inputBindings.isHeld(GameAction.SPRINT);
+    }
     public boolean isInventoryOpen() { return inventoryOpen; }
 }
