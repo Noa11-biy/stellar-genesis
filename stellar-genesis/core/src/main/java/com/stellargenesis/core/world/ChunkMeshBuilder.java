@@ -16,6 +16,12 @@ import java.util.List;
  *
  * C'est du "culled meshing" — on ne dessine que les faces visibles.
  */
+/**
+ * @deprecated Remplacé par {@link ChunkMesher} dans le cadre de la migration
+ * vers Marching Cubes (Mai 2026). Sera supprimé après validation
+ * complète du nouveau pipeline.
+ */
+@Deprecated(since = "0.1.0", forRemoval = true)
 public class ChunkMeshBuilder {
 
     // Les 6 directions : +X, -X, +Y, -Y, +Z, -Z

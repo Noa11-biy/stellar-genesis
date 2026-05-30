@@ -39,6 +39,12 @@ import java.util.List;
  *
  * @author Noa Moal
  */
+/**
+ * @deprecated Remplacé par {@link ChunkMesher} dans le cadre de la migration
+ * vers Marching Cubes (Mai 2026). Sera supprimé après validation
+ * complète du nouveau pipeline.
+ */
+@Deprecated(since = "0.1.0", forRemoval = true)
 public class GreedyMeshBuilder {
 
     /**

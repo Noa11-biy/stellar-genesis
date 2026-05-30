@@ -230,6 +230,9 @@ public class StellarGenesisApp extends SimpleApplication {
         inputBindings.bind(GameAction.TOGGLE_INVENTORY, ActionType.TRIGGER,
                 KeyInput.KEY_TAB, InputContext.GAMEPLAY);
 
+        inputBindings.bind(GameAction.TOGGLE_INVENTORY, ActionType.TRIGGER,
+                KeyInput.KEY_TAB, InputContext.INVENTORY);
+
         inputBindings.bind(GameAction.CLOSE_INVENTORY, ActionType.TRIGGER,
                 KeyInput.KEY_ESCAPE, InputContext.INVENTORY);
 

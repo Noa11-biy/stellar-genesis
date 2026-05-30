@@ -2,10 +2,6 @@ package com.stellargenesis.client.player;
 
 import com.jme3.collision.CollisionResult;
 import com.jme3.collision.CollisionResults;
-import com.jme3.input.InputManager;
-import com.jme3.input.MouseInput;
-import com.jme3.input.controls.ActionListener;
-import com.jme3.input.controls.MouseButtonTrigger;
 import com.jme3.math.Ray;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
@@ -71,54 +67,19 @@ public class PlayerInteraction {
         inputBindings.onTrigger(GameAction.PLACE_BLOCK, this::placeBlock);
     }
 
-    private void setupInput(InputManager inputManager) {
-        // Supprimer TOUS les mappings flyCam qui utilisent le clic droit
-        String[] flyCamMappings = {"FLYCAM_RotateDrag", "FLYCAM_Rise", "FLYCAM_Lower"};
-        for (String m : flyCamMappings) {
-            if (inputManager.hasMapping(m)) {
-                inputManager.deleteMapping(m);
-            }
-        }
-
-        inputManager.addMapping("Mine", new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
-        inputManager.addMapping("Place", new MouseButtonTrigger(MouseInput.BUTTON_RIGHT));
-
-        inputManager.addListener((ActionListener) (name, isPressed, tpf) -> {
-            if (!enabled) return;
-            System.out.println("ACTION: " + name + " pressed=" + isPressed);
-            if (name.equals("Mine")) {
-                mouseHeld = isPressed;
-                if (!isPressed) {
-                    miningSystem.stopMining();
-                    targetBlockPos = null;
-                    targetBlockType = null;
-                }
-            }
-            if (name.equals("Place")) {
-                System.out.println("Place pressed=" + isPressed + " time=" + System.nanoTime());
-                if (isPressed) {
-                    placeBlock();
-                }
-            }
-        }, "Mine", "Place");
-    }
 
     private void placeBlock() {
         RaycastResult hit = raycast();
-        System.out.println("placeBlock: hit=" + (hit != null));
         if (hit == null || hit.adjacentBlockPos == null) {
-            System.out.println("placeBlock: STOP - hit null ou adjacentPos null");
             return;
         }
 
-        System.out.println("placeBlock: adjacentPos=" + hit.adjacentBlockPos);
 
         BlockType toPlace = BlockType.STONE;
 
         // removeItem retourne le nombre retiré (int)
         int removed = inventory.removeItem(toPlace, 1);
         if (removed == 0) {
-            System.out.println("placeBlock: removed=" + removed);
             return; // pas assez en inventaire
         }
 
@@ -128,9 +89,7 @@ public class PlayerInteraction {
 
         ChunkPos chunkPos = ChunkPos.fromWorld(bx, by, bz);
         Chunk chunk = chunkManager.getChunk(chunkPos);
-        System.out.println("placeBlock: chunk=" + (chunk != null) + " pos=" + chunkPos);
         if (chunk == null) {
-            System.out.println("placeBlock: STOP - chunk null");
             return;
         }
 
@@ -139,16 +98,11 @@ public class PlayerInteraction {
         int lz = bz & 15;
 
         int existing = chunk.getBlock(lx, ly, lz);
-        System.out.println("placeBlock: existing block at local(" + lx + "," + ly + "," + lz + ")=" + existing);
         if (existing != 0) {
-            System.out.println("placeBlock: STOP - bloc déjà présent");
             return;
         }
 
-        if (chunk.getBlock(lx, ly, lz) != 0) return;
-
         chunk.setBlock(lx, ly, lz, (short) toPlace.getId());
-        System.out.println("PLACED! Chunk dirty: " + chunk.isDirty());
 
         // Marquer les voisins dirty si placement au bord
         if (lx == 0)               markDirty(chunkPos.x - 1, chunkPos.y, chunkPos.z);
@@ -305,8 +259,6 @@ public class PlayerInteraction {
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
         if (!enabled) {
-            // Arrêter tout état actif
-            mouseHeld = false;
             miningSystem.stopMining();
             targetBlockPos = null;
             targetBlockType = null;
