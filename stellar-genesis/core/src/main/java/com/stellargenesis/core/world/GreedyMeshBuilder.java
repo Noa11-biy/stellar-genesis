@@ -3,6 +3,7 @@ package com.stellargenesis.core.world;
 import com.jme3.scene.Mesh;
 import com.jme3.scene.VertexBuffer;
 import com.jme3.util.BufferUtils;
+import com.stellargenesis.core.world.meshing.ChunkMesher;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,6 +40,7 @@ import java.util.List;
  *
  * @author Noa Moal
  */
+
 /**
  * @deprecated Remplacé par {@link ChunkMesher} dans le cadre de la migration
  * vers Marching Cubes (Mai 2026). Sera supprimé après validation

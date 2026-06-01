@@ -334,5 +334,15 @@ public final class MarchingCubesTables {
             {3, 7}  // e11
     };
 
+    public static final int[][] VERTEX_OFFSETS = {
+            {0, 0, 0},  // v0
+            {1, 0, 0},  // v1
+            {1, 0, 1},  // v2
+            {0, 0, 1},  // v3
+            {0, 1, 0},  // v4
+            {1, 1, 0},  // v5
+            {1, 1, 1},  // v6
+            {0, 1, 1}   // v7
+    };
 
 }

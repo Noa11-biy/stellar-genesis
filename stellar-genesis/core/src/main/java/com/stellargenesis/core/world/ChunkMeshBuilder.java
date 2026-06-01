@@ -4,6 +4,7 @@ import com.jme3.math.Vector3f;
 import com.jme3.scene.Mesh;
 import com.jme3.scene.VertexBuffer;
 import com.jme3.util.BufferUtils;
+import com.stellargenesis.core.world.meshing.ChunkMesher;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.List;
  *
  * C'est du "culled meshing" — on ne dessine que les faces visibles.
  */
+
 /**
  * @deprecated Remplacé par {@link ChunkMesher} dans le cadre de la migration
  * vers Marching Cubes (Mai 2026). Sera supprimé après validation
