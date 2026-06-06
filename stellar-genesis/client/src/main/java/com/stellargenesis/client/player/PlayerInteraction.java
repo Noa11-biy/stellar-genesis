@@ -97,12 +97,13 @@ public class PlayerInteraction {
         int ly = by & 15;
         int lz = bz & 15;
 
-        int existing = chunk.getBlock(lx, ly, lz);
-        if (existing != 0) {
-            return;
-        }
+        // TODO: adapter au système de densité (Marching Cubes)
+        // short blockId = chunk.getBlock(lx, ly, lz);
+        short blockId = 0;
 
-        chunk.setBlock(lx, ly, lz, (short) toPlace.getId());
+        // TODO: adapter au système de densité (Marching Cubes)
+        // chunk.setBlock(lx, ly, lz, (short) 0);
+
 
         // Marquer les voisins dirty si placement au bord
         if (lx == 0)               markDirty(chunkPos.x - 1, chunkPos.y, chunkPos.z);
@@ -199,7 +200,9 @@ public class PlayerInteraction {
         int localY = by & 15;
         int localZ = bz & 15;
 
-        short voxelId = chunk.getBlock(localX, localY, localZ);
+        // TODO: adapter au système de densité (Marching Cubes)
+        // short blockId = chunk.getBlock(lx, ly, lz);
+        short voxelId = 0;
 
         if (voxelId == 0) return null; // air
 
@@ -233,8 +236,8 @@ public class PlayerInteraction {
      * 3. Ajouter l'item à l'inventaire
      */
     private void onBlockBroken(RaycastResult hit){
-        // 1. Supprimer le bloc
-        hit.chunk.setBlock(hit.localX, hit.localY, hit.localZ, (short) 0);
+        // TODO: adapter au système de densité (Marching Cubes)
+        // chunk.setBlock(lx, ly, lz, (short) 0););
 
         // 2. Marquer les chunks voisins comme dirty si le bloc est au bord
         markNeighborsDirty(hit);

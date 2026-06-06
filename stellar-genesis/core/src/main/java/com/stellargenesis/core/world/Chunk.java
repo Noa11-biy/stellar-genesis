@@ -129,6 +129,10 @@ public class Chunk {
         return density.get(lx, ly, lz);
     }
 
+    public DensityField getDensityField() {
+        return density;
+    }
+
     /**
      * Modifie la densité à une position locale [0..16].
      * Marque le chunk dirty (le mesh doit être recalculé).

@@ -7,7 +7,7 @@ import com.jme3.util.BufferUtils;
 import com.stellargenesis.core.world.meshing.ChunkMesh;
 
 /**
- * Convertit un ChunkMesh (data brute du module core) en Mesh jMonkeyEngine
+ * Convertit un ChunkMesh (data brute du module core) en Mesh jMonkeyEngineq
  * prêt à être affiché sur le GPU.
  *
  * Calcule les normales lisses (smooth shading) en deux passes :

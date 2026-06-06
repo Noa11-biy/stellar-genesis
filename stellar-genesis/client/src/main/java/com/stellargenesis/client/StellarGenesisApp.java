@@ -7,7 +7,6 @@ import com.jme3.bullet.control.RigidBodyControl;
 import com.jme3.input.KeyInput;
 import com.jme3.input.MouseInput;
 import com.jme3.material.Material;
-import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
@@ -20,25 +19,22 @@ import com.jme3.scene.Spatial;
 import com.jme3.system.AppSettings;
 
 import com.stellargenesis.client.audio.OSTManager;
-import com.stellargenesis.client.audio.SFXManager;
 import com.stellargenesis.client.input.*;
 import com.stellargenesis.client.player.PlayerControl;
 import com.stellargenesis.client.player.PlayerInteraction;
 import com.stellargenesis.client.player.StaminaSystem;
-import com.stellargenesis.client.render.DayNightCycle;
-import com.stellargenesis.client.render.FrustumDebugRenderer;
-import com.stellargenesis.client.render.FrustumExtractor;
-import com.stellargenesis.client.render.SkyManager;
+import com.stellargenesis.client.render.*;
 import com.stellargenesis.client.screens.PauseScreenState;
 import com.stellargenesis.client.screens.TitleScreenState;
 import com.stellargenesis.client.ui.*;
 import com.stellargenesis.core.inventory.Inventory;
-import com.stellargenesis.core.math.Vec3;
 import com.stellargenesis.core.physics.math.Frustum;
 import com.stellargenesis.core.player.MiningSystem;
 import com.stellargenesis.core.world.*;
 import com.stellargenesis.core.physics.PlanetData;
-import com.stellargenesis.core.physics.PlanetPhysics;
+import com.stellargenesis.core.world.density.DensityFieldGenerator;
+import com.stellargenesis.core.world.meshing.ChunkMesh;
+import com.stellargenesis.core.world.meshing.ChunkMesher;
 
 import java.util.*;
 
@@ -60,7 +56,7 @@ public class StellarGenesisApp extends SimpleApplication {
 
      // -- Monde --
     private  ChunkManager chunkManager;
-    private WorldGenerator worldGenerator;
+    private DensityFieldGenerator densityGenerator;
     private PlanetData planetData;
 
     // -- Rendu --
@@ -449,8 +445,8 @@ public class StellarGenesisApp extends SimpleApplication {
      */
     private void initWorld(){
 
-        worldGenerator = new WorldGenerator(planetData);
-        chunkManager = new ChunkManager(worldGenerator, renderDistance);
+        densityGenerator = new DensityFieldGenerator(planetData.getSeed());
+        chunkManager = new ChunkManager(densityGenerator, renderDistance);
 
         worldNode = new Node("World");
         rootNode.attachChild(worldNode);
@@ -536,33 +532,9 @@ public class StellarGenesisApp extends SimpleApplication {
      * Parcourt les blocs de haut en bas jusqu'à trouver un solide.
      */
     private float findTerrainHeight(float x, float z) {
-        int ix = (int) x;
-        int iz = (int) z;
-
-        int chunkX = Math.floorDiv(ix, Chunk.SIZE);
-        int chunkZ = Math.floorDiv(iz, Chunk.SIZE);
-
-        // Générer les chunks de la colonne de spawn directement (appelé UNE FOIS au spawn)
-        for (int cy = 0; cy <= 8; cy++) {
-            ChunkPos pos = new ChunkPos(chunkX, cy, chunkZ);
-
-            // Si pas encore chargé → générer maintenant sur le thread principal
-            if (chunkManager.getChunk(pos) == null) {
-                Chunk chunk = new Chunk(pos);
-                worldGenerator.generateChunk(chunk);
-                chunkManager.forceInsert(pos, chunk); // ← à ajouter dans ChunkManager
-            }
-        }
-
-        // Chercher le premier bloc solide de haut en bas
-        for (int y = Chunk.SIZE * 8; y >= 0; y--) {
-            short block = chunkManager.getBlock(ix, y, iz);
-            if (block != 0) {
-                return y + 1;
-            }
-        }
-
-        return 64f;
+        // TODO Marching Cubes : recalculer en échantillonnant le champ de densité
+        // Pour l'instant on hardcode (la valeur du baseHeight du DensityFieldGenerator)
+        return 70f;
     }
 
     /**
@@ -591,7 +563,8 @@ public class StellarGenesisApp extends SimpleApplication {
             int attached = 0;
             ChunkManager.ChunkMeshPair pair;
             while (attached < limit && (pair = chunkManager.getReadyQueue().poll()) != null) {
-                attachChunk(pair.pos(), pair.mesh());
+                com.jme3.scene.Mesh jmeMesh = MeshConverter.toJmeMesh(pair.mesh());
+                attachChunk(pair.pos(), jmeMesh);
                 attached++;
             }
         }
@@ -662,7 +635,10 @@ public class StellarGenesisApp extends SimpleApplication {
                 Chunk chunk = chunkManager.getChunk(pos);
                 if (chunk == null || !chunk.isDirty()) continue;
 
-                Mesh newMesh = GreedyMeshBuilder.buildMesh(chunk, chunkManager);
+                ChunkMesh chunkMesh = ChunkMesher.mesh(chunk.getDensityField());
+                Mesh newMesh = (chunkMesh != null && chunkMesh.getVertices().length > 0)
+                        ? MeshConverter.toJmeMesh(chunkMesh)
+                        : null;
 
                 if (newMesh == null) {
                     // Chunk vide → retirer de la scène
@@ -749,7 +725,7 @@ public class StellarGenesisApp extends SimpleApplication {
 
         System.out.println("[PRELOAD] Génération synchrone des chunks de spawn...");
 
-        // PASSE 1 — Générer TOUS les chunks d'abord
+        // PASSE 1 — Générer TOUS les chunks
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
                 for (int dy = -1; dy <= 2; dy++) {
@@ -757,13 +733,15 @@ public class StellarGenesisApp extends SimpleApplication {
                     if (chunkManager.getChunk(pos) != null) continue;
 
                     Chunk chunk = new Chunk(pos);
-                    worldGenerator.generateChunk(chunk);
+                    var generated = densityGenerator.generate(pos.x, pos.y, pos.z);
+                    copyDensityTo(generated, chunk.getDensityField());
+                    chunk.markGenerated();
                     chunkManager.forceInsert(pos, chunk);
                 }
             }
         }
 
-        // PASSE 2 — Builder les mesh quand TOUS les voisins existent
+        // PASSE 2 — Mesh + attach
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
                 for (int dy = -1; dy <= 2; dy++) {
@@ -771,8 +749,9 @@ public class StellarGenesisApp extends SimpleApplication {
                     Chunk chunk = chunkManager.getChunk(pos);
                     if (chunk == null) continue;
 
-                    Mesh mesh = GreedyMeshBuilder.buildMesh(chunk, chunkManager);
-                    if (mesh != null) {
+                    ChunkMesh chunkMesh = ChunkMesher.mesh(chunk.getDensityField());
+                    if (chunkMesh != null && chunkMesh.getVertices().length > 0) {
+                        com.jme3.scene.Mesh mesh = MeshConverter.toJmeMesh(chunkMesh);
                         attachChunk(pos, mesh);
                     }
                 }
@@ -780,6 +759,15 @@ public class StellarGenesisApp extends SimpleApplication {
         }
 
         System.out.println("[PRELOAD] Chunks de spawn prêts !");
+    }
+
+    private static void copyDensityTo(com.stellargenesis.core.world.density.DensityField src,
+                                      com.stellargenesis.core.world.density.DensityField dst) {
+        int size = src.getSize();
+        for (int z = 0; z < size; z++)
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                    dst.set(x, y, z, src.get(x, y, z));
     }
 
     public void togglePause() {

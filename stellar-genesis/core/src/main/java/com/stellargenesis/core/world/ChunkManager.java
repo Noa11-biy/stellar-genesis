@@ -3,6 +3,11 @@ package com.stellargenesis.core.world;
 import com.stellargenesis.core.math.Vec3;
 import com.stellargenesis.core.physics.math.AABB;
 import com.stellargenesis.core.physics.math.Frustum;
+import com.stellargenesis.core.world.density.DensityField;
+import com.stellargenesis.core.world.density.DensityFieldGenerator;
+import com.stellargenesis.core.world.meshing.ChunkMesh;
+import com.stellargenesis.core.world.meshing.ChunkMesher;
+
 
 import java.util.Map;
 import java.util.concurrent.*;
@@ -38,14 +43,14 @@ public class ChunkManager {
     private final ExecutorService genPool;
     private final ConcurrentHashMap<ChunkPos, Boolean> pendingGeneration;
     private final ConcurrentLinkedQueue<ChunkMeshPair> readyToAttach = new ConcurrentLinkedQueue<>();
-    private final WorldGenerator generator;
+    private final DensityFieldGenerator generator;
     private final int renderDistance;
 
     /**
      * @param generator      le générateur de terrain (bruit, biomes...)
      * @param renderDistance  rayon en chunks (8 = 8×16 = 128 blocs)
      */
-    public ChunkManager(WorldGenerator generator, int renderDistance){
+    public ChunkManager(DensityFieldGenerator generator, int renderDistance){
         this.generator = generator;
         this.renderDistance = renderDistance;
         this.loadedChunks = new ConcurrentHashMap<>();
@@ -163,21 +168,46 @@ public class ChunkManager {
      */
     private void generateAsync(ChunkPos pos) {
         try {
+            // 1. Créer le chunk
             Chunk chunk = new Chunk(pos);
-            generator.generateChunk(chunk);
+
+            // 2. Générer le champ de densité directement DANS le chunk
+            //    subtilité : DensityFieldGenerator.generate() retourne un NOUVEAU
+            //    DensityField, alors que Chunk en a déjà un en interne.
+            //    → voir note ci-dessous
+            DensityField generated = generator.generate(pos.x, pos.y, pos.z);
+
+            // → on copie le contenu dans le DensityField du chunk
+            //    (ou alternative : on adapte Chunk pour accepter un DensityField externe)
+            copyDensity(generated, chunk.getDensityField());
+
+            chunk.markGenerated();
             loadedChunks.put(pos, chunk);
 
-            // Mesher ce chunk
-            com.jme3.scene.Mesh mesh = GreedyMeshBuilder.buildMesh(chunk, this);
-            if (mesh != null) {
-                readyToAttach.add(new ChunkMeshPair(pos, chunk, mesh));
+            // 3. Mesher
+            ChunkMesh chunkMesh = ChunkMesher.mesh(chunk.getDensityField());
+
+            // 4. Si le mesh n'est pas vide, le pousser TEL QUEL (pas de conversion)
+            if (chunkMesh != null && chunkMesh.getVertices().length > 0) {
+                readyToAttach.add(new ChunkMeshPair(pos, chunk, chunkMesh));
             }
 
-            // Remarquer les 6 voisins déjà chargés pour qu'ils se re-meshent
+            // 5. Re-mesher les voisins
             remeshNeighbors(pos);
 
         } finally {
             pendingGeneration.remove(pos);
+        }
+    }
+
+    private static void copyDensity(DensityField src, DensityField dst) {
+        int size = src.getSize();
+        for (int z = 0; z < size; z++) {
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    dst.set(x, y, z, src.get(x, y, z));
+                }
+            }
         }
     }
 
@@ -198,10 +228,9 @@ public class ChunkManager {
             Chunk neighbor = loadedChunks.get(neighborPos);
             if (neighbor == null) continue; // pas encore chargé, pas grave
 
-            // Re-mesher le voisin avec les nouvelles données disponibles
-            com.jme3.scene.Mesh newMesh = GreedyMeshBuilder.buildMesh(neighbor, this);
-            if (newMesh != null) {
-                readyToAttach.add(new ChunkMeshPair(neighborPos, neighbor, newMesh));
+            ChunkMesh chunkMesh = ChunkMesher.mesh(neighbor.getDensityField());
+            if (chunkMesh != null && chunkMesh.getVertices().length > 0) {
+                readyToAttach.add(new ChunkMeshPair(neighborPos, neighbor, chunkMesh));
             }
         }
     }
@@ -240,35 +269,6 @@ public class ChunkManager {
      */
     public Chunk getChunkAt(int wx, int wy, int wz){
         return loadedChunks.get(ChunkPos.fromWorld(wx, wy, wz));
-    }
-
-    /**
-     * Lire un bloc dans le monde.
-     * Trouve le bon chunk puis lit la position locale.
-     * Retourne 0 (air) si le chunk n'est pas chargé.
-     */
-    public short getBlock(int wx, int wy, int wz){
-        Chunk chunk = getChunkAt(wx, wy, wz);
-        if (chunk == null) return 0;
-
-        int lx = wx & 0xF;     // modulo 16 par masque binaire
-        int ly = wy & 0xF;
-        int lz = wz & 0xF;
-        return chunk.getBlock(lx, ly, lz);
-    }
-
-    /**
-     * Placer un bloc dans le monde.
-     * Trouve le bon chunk et modifie la position locale.
-     */
-    public void setBlock(int wx, int wy, int wz, short blockId){
-        Chunk chunk = getChunkAt(wx, wy, wz);
-        if (chunk == null) return;
-
-        int lx = wx & 0xF;
-        int ly = wy & 0xF;
-        int lz = wz & 0xF;
-        chunk.setBlock(lx, ly, lz, blockId);
     }
 
     /**
@@ -339,5 +339,5 @@ public class ChunkManager {
         }
     }
 
-    public record ChunkMeshPair(ChunkPos pos, Chunk chunk, com.jme3.scene.Mesh mesh) {}
+    public record ChunkMeshPair(ChunkPos pos, Chunk chunk, ChunkMesh mesh) {}
 }
