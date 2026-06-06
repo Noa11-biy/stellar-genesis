@@ -1,5 +1,7 @@
 package com.stellargenesis.core.world;
 
+import com.stellargenesis.core.world.density.DensityField;
+
 /**
  * Un chunk = 16×16×16 voxels.
  *
@@ -14,24 +16,26 @@ package com.stellargenesis.core.world;
  *   wx = cx × 16 + lx     (reconstruction)
  *
  * Stockage :
- *   short[][][] voxels → ID du BlockType (0 = air)
- *   Mémoire par chunk : 16×16×16 × 2 octets = 8 192 octets = 8 Ko
- *   100 chunks chargés = 800 Ko (très léger)
+ *  DensityField (17×17×17 floats) → champ scalaire continu
+ *  Convention : densité >= 0 → matière, densité < 0 → vide
+ *  Mémoire par chunk : 17³ × 4 octets = 19 652 octets ≈ 19 Ko
+ *  100 chunks chargés ≈ 2 Mo (toujours léger)
  */
 
 
 public class Chunk {
 
     public static final int SIZE = 16;
+    public static final int DENSITY_SIZE = 17;
 
     private final ChunkPos position;
-    private final short[][][] voxels;
+    private final DensityField density;
     private boolean dirty;        // true = le mesh doit être recalculé
     private boolean generated;     // true = le terrain a été généré
 
     public Chunk(ChunkPos position){
         this.position = position;
-        this.voxels = new short[SIZE][SIZE][SIZE];
+        this.density = new DensityField(DENSITY_SIZE);
         this.dirty = false;
         this.generated = false;
     }
@@ -68,94 +72,40 @@ public class Chunk {
         return chunkCoord * SIZE + localCoord;
     }
 
-    // === ACCÈS AUX VOXELS ===
-
-    /**
-     * Lire le type de bloc à une position locale.
-     * Retourne 0 (AIR) si hors limites.
-     */
-    public short getBlock(int lx, int ly, int lz){
-        if(!inBounds(lx, ly, lz)) return 0;
-        return voxels[lx][ly][lz];
-    }
-
-    /**
-     * Placer un bloc à une position locale.
-     * Marque le chunk comme dirty pour remaillage.
-     */
-    public void setBlock(int lx, int ly, int lz, short blockId){
-        if (!inBounds(lx, ly, lz)) return;
-        if (voxels[lx][ly][lz] == blockId) return;
-
-        voxels[lx][ly][lz] = blockId;
-        dirty = true;
-    }
-
-
-    /**
-    * Surcharge pratique : accepte un BlockType directement.
-    * Le WorldGenerator manipule des BlockType (logique métier),
-    * le Chunk stocke des short (optimisation mémoire).
-    * Cette méthode fait le pont entre les deux.
-    */
-    public void setBlock(int lx, int ly, int lz, BlockType type) {
-        setBlock(lx, ly, lz, (short) type.getId());
-    }
-
-    /**
-     * Vérifier si un bloc est de l'air.
-     */
-    public boolean isAir(int lx, int ly, int lz){
-        return  getBlock(lx, ly, lz) == 0;
-    }
-
     /**
      * Vérifier qu'une coordonnée locale est dans [0..15].
      */
-    public boolean inBounds(int lx, int ly, int lz){
+    public boolean inDensityBounds(int lx, int ly, int lz) {
+        return lx >= 0 && lx < DENSITY_SIZE
+                && ly >= 0 && ly < DENSITY_SIZE
+                && lz >= 0 && lz < DENSITY_SIZE;
+    }
+
+    public boolean inCubeBounds(int lx, int ly, int lz){
         return lx >= 0 && lx < SIZE
                 && ly >= 0 && ly < SIZE
                 && lz >= 0 && lz < SIZE;
     }
 
-    // === COMPTAGE ===
-
     /**
-     * Compter les blocs non-air dans le chunk.
-     * Utile pour savoir si le chunk est vide (skip rendu).
+     * Le chunk contient-il une iso-surface à mailler ?
+     *
+     * Si toutes les densités ont le même signe (toutes >= 0 ou toutes < 0),
+     * aucun cube ne sera coupé par la surface → rien à mailler → skip.
      */
-    public int countSolid(){
-        int count = 0;
-        for (int x = 0; x < SIZE ; x++) {
-            for (int y = 0; y < SIZE; y++) {
-                for (int z= 0; z < SIZE; z++) {
-                    if (voxels[x][y][z] != 0) count ++;
+    public boolean hasSurface(){
+        boolean foundPositive = false;
+        boolean foundNegative = false;
+        for (int z = 0; z < DENSITY_SIZE; z++) {
+            for (int y = 0; y < DENSITY_SIZE; y++) {
+                for (int x = 0; x < DENSITY_SIZE; x++) {
+                    if (density.get(x, y, z) >= 0) foundPositive = true;
+                    else foundNegative = true;
+                    if (foundPositive && foundNegative) return true;
                 }
             }
         }
-        return count;
-    }
-
-    /**
-     * Compter un type de bloc spécifique.
-     */
-    public int countBlock(short blockId) {
-        int count = 0;
-        for (int x = 0; x < SIZE; x++) {
-            for (int y = 0; y < SIZE; y++) {
-                for (int z = 0; z < SIZE; z++) {
-                    if (voxels[x][y][z] == blockId) count++;
-                }
-            }
-        }
-        return count;
-    }
-
-    /**
-     * Le chunk est-il entièrement vide ?
-     */
-    public boolean isEmpty(){
-        return countSolid() == 0;
+        return false;
     }
 
     // === ÉTAT ===
@@ -167,15 +117,33 @@ public class Chunk {
     public boolean isGenerated() { return generated; }
     public void markGenerated() { generated = true; }
 
-    // === GETTERS ===
+    // === GETTERS ET SETTERS ===
 
     public ChunkPos getPosition() { return position; }
 
     /**
-     * Accès direct au tableau pour la génération.
-     * À utiliser uniquement dans le WorldGenerator.
+     * Lit la densité à une position locale [0..16].
+     * Convention : densité >= 0 → matière, densité < 0 → vide.
      */
-    public short[][][] getRawVoxels() { return voxels; }
+    public float getDensity(int lx, int ly, int lz) {
+        return density.get(lx, ly, lz);
+    }
 
+    /**
+     * Modifie la densité à une position locale [0..16].
+     * Marque le chunk dirty (le mesh doit être recalculé).
+     */
+    public void setDensity(int lx, int ly, int lz, float value) {
+        density.set(lx, ly, lz, value);
+        dirty = true;
+    }
+
+    /**
+     * Un point est dans la matière si sa densité est >= 0.
+     * (équivalent sémantique de l'ancien !isAir)
+     */
+    public boolean isInside(int lx, int ly, int lz) {
+        return getDensity(lx, ly, lz) >= 0;
+    }
 
 }
