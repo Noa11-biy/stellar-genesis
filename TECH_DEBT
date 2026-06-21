@@ -1,0 +1,67 @@
+# 🔧 Dette Technique — Stellar Genesis
+
+> **Suivi des compromis techniques assumés et à corriger.**
+> Chaque entrée est liée à une [issue GitHub](../../issues) pour le suivi détaillé.
+>
+> Dernière mise à jour : 21 juin 2026
+
+---
+
+## 📊 Vue d'ensemble
+
+| # | Dette | Type | Priorité | Statut |
+|---|-------|------|----------|--------|
+| [#1](../../issues/1) | API `toJmeMesh` lourde → ChunkColorizer | Refactor | 🔴 Haute | ⬜ À faire |
+| [#2](../../issues/2) | God Object `StellarGenesisApp` | Refactor | 🔴 Haute | ⬜ À faire |
+| [#3](../../issues/3) | Trous entre chunks au spawn | Bug | 🟠 Moyenne | 🔍 Investigation |
+| [#4](../../issues/4) | Collision physique manquante | Feature | 🟠 Moyenne | ⬜ Planifié |
+| [#5](../../issues/5) | Minage en densité désactivé | Bug | 🟡 Basse | ⬜ À faire |
+
+---
+
+## 🔴 Priorité haute
+
+### #1 — API `toJmeMesh` lourde → ChunkColorizer
+- **Problème** : `toJmeMesh()` a 6 paramètres, signature fragile qui a déjà cassé `ChunkMeshDebugApp`.
+- **Impact** : encapsulation violée, logique couleur mélangée à la conversion de mesh.
+- **Solution** : extraire un `ChunkColorizer` dédié, `toJmeMesh()` redevient simple.
+- **Critère** : 1 seul paramètre, ChunkColorizer testé JUnit, debug app recompile.
+
+### #2 — God Object `StellarGenesisApp`
+- **Problème** : la classe principale fait tout (init, monde, joueur, HUD, inputs, rendu).
+- **Impact** : viole le SRP, non testable, fragile à chaque modif.
+- **Solution** : découper en AppStates jME (`WorldState`, `PlayerState`, `HudState`, `InputState`).
+- **Critère** : `StellarGenesisApp` < 100 lignes, une responsabilité par AppState, zéro régression.
+
+---
+
+## 🟠 Priorité moyenne
+
+### #3 — Trous entre chunks au spawn
+- **Problème** : raccords d'iso-surface cassés au preload si `remeshNeighbors` absent.
+- **Cause suspectée** : overlap densité mal raccordé OU ordre génération/meshing incorrect.
+- **Impact** : terrain visuellement cassé au spawn, symptôme contourné mais cause non comprise.
+- **Solution** : reproduire, vérifier l'overlap des DensityField, corriger la cause racine.
+- **Critère** : plus aucun trou même sans patch `remeshNeighbors`.
+
+### #4 — Collision physique manquante
+- **Problème** : aucune `MeshCollisionShape` Bullet sur le terrain Marching Cubes.
+- **Impact** : le joueur ne marche pas sur le sol, bloque la Phase 5-6.
+- **Solution** : générer une collision shape par chunk, l'attacher au PhysicsSpace.
+- **Critère** : le joueur marche, pas de chute aux bordures, perf acceptable.
+
+---
+
+## 🟡 Priorité basse
+
+### #5 — Minage en densité désactivé
+- **Problème** : 4 lignes commentées dans `PlayerInteraction.java` (TODO densité).
+- **Impact** : minage/placement HS depuis le passage à Marching Cubes.
+- **Solution** : sculpting de densité dans une sphère + remesh (voisins inclus).
+- **Critère** : creuser/ajouter fonctionne, bordures continues.
+- **Dépend de** : #3 (raccords chunks).
+
+---
+
+## 🗺️ Ordre de traitement
+#1 ChunkColorizer  →  #2 God Object  →  #3 Trous chunks  →  #4 Collision  →  #5 Minage
