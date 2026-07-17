@@ -1,5 +1,7 @@
 package com.stellargenesis.core.world.meshing;
 
+import com.stellargenesis.core.math.Vec3;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Objects;
@@ -58,8 +60,56 @@ public class MeshBuilder {
             indsArray[i] = indices.get(i);
         }
 
-        return new ChunkMesh(vertsArray, indsArray);
+        float[] normalsArray = computeNormals(vertsArray, indsArray);
+
+        return new ChunkMesh(vertsArray, indsArray, normalsArray);
     }
+
+    private float[] computeNormals(float[] verts, int[] inds) {
+        float[] normals = new float[verts.length]; // init à 0 automatiquement
+
+        // ÉTAPE 1 : accumuler les normales de face
+        for (int i = 0; i < inds.length; i += 3) {
+            int i0 = inds[i];
+            int i1 = inds[i + 1];
+            int i2 = inds[i + 2];
+
+            Vec3 P0 = new Vec3(verts[i0*3], verts[i0*3+1], verts[i0*3+2]);
+            Vec3 P1 = new Vec3(verts[i1*3], verts[i1*3+1], verts[i1*3+2]);
+            Vec3 P2 = new Vec3(verts[i2*3], verts[i2*3+1], verts[i2*3+2]);
+
+            Vec3 edge1 = P1.sub(P0);
+            Vec3 edge2 = P2.sub(P0);
+            Vec3 faceNormal = edge1.cross(edge2); // PAS normalisée
+
+            accumulate(normals, i0, faceNormal);
+            accumulate(normals, i1, faceNormal);
+            accumulate(normals, i2, faceNormal);
+        }
+
+        // ÉTAPE 2 : normaliser
+        for (int v = 0; v < normals.length; v += 3) {
+            float nx = normals[v], ny = normals[v+1], nz = normals[v+2];
+            float len = (float) Math.sqrt(nx*nx + ny*ny + nz*nz);
+            if (len > 1e-6f) {
+                normals[v]   = nx / len;
+                normals[v+1] = ny / len;
+                normals[v+2] = nz / len;
+            } else {
+                normals[v] = 0f; normals[v+1] = 1f; normals[v+2] = 0f;
+            }
+        }
+
+        return normals;
+    }
+
+    // petite méthode utilitaire pour éviter la répétition
+    private void accumulate(float[] normals, int vertexIndex, Vec3 n) {
+        normals[vertexIndex*3]   += (float) n.x;
+        normals[vertexIndex*3+1] += (float) n.y;
+        normals[vertexIndex*3+2] += (float) n.z;
+    }
+
 
 }
 

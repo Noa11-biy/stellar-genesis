@@ -68,4 +68,7 @@ public class DensityFieldGenerator {
         // Normaliser [-1, 1] puis appliquer amplitude + baseHeight
         return baseHeight + (total / maxValue) * amplitude;
     }
+
+    public float getBaseHeight() { return baseHeight; }
+    public float getAmplitude()  { return amplitude; }
 }

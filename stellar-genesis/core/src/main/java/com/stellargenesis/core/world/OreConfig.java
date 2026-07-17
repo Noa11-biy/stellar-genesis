@@ -13,6 +13,13 @@ package com.stellargenesis.core.world;
  * Ordonnés du plus RARE au plus COMMUN (le premier trouvé gagne).
  */
 
+/**
+ * @deprecated Remplacé par le système de densité continue (Marching Cubes).
+ *             Sera réintroduit sous une autre forme en Phase 4 (minage en densité).
+ *             Ne plus utiliser dans le nouveau code.
+ */
+@Deprecated(since = "Phase 3", forRemoval = true)
+
 public class OreConfig {
 
     public final BlockType blockType;

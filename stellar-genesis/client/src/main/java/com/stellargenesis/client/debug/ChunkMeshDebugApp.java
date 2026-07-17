@@ -9,6 +9,9 @@ import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Mesh;
 import com.stellargenesis.client.render.MeshConverter;
+import com.stellargenesis.core.world.ChunkPos;
+import com.stellargenesis.core.world.biome.BiomeRules;
+import com.stellargenesis.core.world.biome.ColorPalette;
 import com.stellargenesis.core.world.density.DensityField;
 import com.stellargenesis.core.world.density.DensityFieldGenerator;
 import com.stellargenesis.core.world.meshing.ChunkMesh;
@@ -45,6 +48,7 @@ public class ChunkMeshDebugApp extends SimpleApplication {
         // 2. Meshing Marching Cubes
         ChunkMesher mesher = new ChunkMesher();
         ChunkMesh chunkMesh = mesher.mesh(field);
+        ChunkPos chunkPos = new ChunkPos(0,0,0);
 
         System.out.println("Mesh généré : "
                 + chunkMesh.getVertexCount() + " sommets, "
@@ -56,8 +60,14 @@ public class ChunkMeshDebugApp extends SimpleApplication {
         }
 
         // 3. Conversion vers jME Mesh
-        Mesh jmeMesh = MeshConverter.toJmeMesh(chunkMesh);
-
+        Mesh jmeMesh = MeshConverter.toJmeMesh(
+                chunkMesh,
+                chunkPos,            // la ChunkPos du chunk debug
+                64f,                 // baseHeight (ou densityGenerator.getBaseHeight())
+                20f,                 // amplitude
+                BiomeRules.earthLike(),
+                ColorPalette.earthLike()
+        );
         // 4. Création de la Geometry
         Geometry geom = new Geometry("Chunk", jmeMesh);
 

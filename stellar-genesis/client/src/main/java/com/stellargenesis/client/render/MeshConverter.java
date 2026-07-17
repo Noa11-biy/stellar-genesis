@@ -4,6 +4,11 @@ import com.jme3.math.Vector3f;
 import com.jme3.scene.Mesh;
 import com.jme3.scene.VertexBuffer;
 import com.jme3.util.BufferUtils;
+import com.stellargenesis.core.math.Vec3;
+import com.stellargenesis.core.world.Chunk;
+import com.stellargenesis.core.world.ChunkPos;
+import com.stellargenesis.core.world.biome.BiomeRules;
+import com.stellargenesis.core.world.biome.ColorPalette;
 import com.stellargenesis.core.world.meshing.ChunkMesh;
 
 /**
@@ -22,58 +27,76 @@ public class MeshConverter {
      * @param chunkMesh le mesh source (issu de ChunkMesher)
      * @return un Mesh jME prêt à être attaché à une Geometry
      */
-    public static Mesh toJmeMesh(ChunkMesh chunkMesh) {
+    public static Mesh toJmeMesh(ChunkMesh chunkMesh, ChunkPos pos,
+                                 float baseHeight, float amplitude,
+                                 BiomeRules rules, ColorPalette palette) {
         float[] vertices = chunkMesh.getVertices();
         int[] indices = chunkMesh.getIndices();
-
-        // Tableau des normales : un Vector3f par sommet
         int vertexCount = vertices.length / 3;
-        float[] normals = computeSmoothNormals(vertices, indices, vertexCount);
 
-        // Construction du Mesh jME
+        float[] normals = computeSmoothNormals(vertices, indices, vertexCount);
+        float[] colors  = computeColors(vertices, normals, pos,
+                baseHeight, amplitude, rules, palette);
+
         Mesh mesh = new Mesh();
         mesh.setBuffer(VertexBuffer.Type.Position, 3, BufferUtils.createFloatBuffer(vertices));
         mesh.setBuffer(VertexBuffer.Type.Normal,   3, BufferUtils.createFloatBuffer(normals));
+        mesh.setBuffer(VertexBuffer.Type.Color,    4, BufferUtils.createFloatBuffer(colors)); // ← NOUVEAU
         mesh.setBuffer(VertexBuffer.Type.Index,    3, BufferUtils.createIntBuffer(indices));
-        mesh.updateBound();  // calcule la bounding box pour le frustum culling
-
+        mesh.updateBound();
         return mesh;
     }
 
-    /**
-     * Calcule les normales lisses par sommet.
-     *
-     * Algorithme :
-     *  - Passe 1 : pour chaque triangle, calculer (B-A) × (C-A) et ajouter
-     *              ce vecteur (non normalisé) aux 3 sommets du triangle.
-     *  - Passe 2 : normaliser chaque normale de sommet.
-     *
-     * On NE normalise PAS la normale du triangle avant de l'ajouter, pour que
-     * les grands triangles contribuent davantage que les petits (pondération
-     * naturelle par l'aire).
-     */
+    private static float[] computeColors(float[] vertices, float[] normals, ChunkPos pos,
+                                         float baseHeight, float amplitude,
+                                         BiomeRules rules, ColorPalette palette) {
+        int vertexCount = vertices.length / 3;
+        float[] colors = new float[vertexCount * 4]; // RGBA
+
+        for (int v = 0; v < vertexCount; v++) {
+            int p = v * 3;
+
+            // Reconversion local → monde sur Y
+            float worldY = vertices[p + 1] + pos.y * Chunk.SIZE;
+
+            Vec3 normal = new Vec3(normals[p], normals[p + 1], normals[p + 2]);
+            Vec3 color  = rules.colorForFlat(worldY, normal, baseHeight, amplitude, palette);
+
+            int c = v * 4;
+            colors[c]     = (float) color.x;
+            colors[c + 1] = (float) color.y;
+            colors[c + 2] = (float) color.z;
+            colors[c + 3] = 1.0f;
+        }
+        return colors;
+    }
+
+
     private static float[] computeSmoothNormals(float[] vertices, int[] indices, int vertexCount) {
         float[] normals = new float[vertexCount * 3];
 
-        // PASSE 1 : accumulation
-        for (int t = 0; t < indices.length; t += 3) {
-            int iA = indices[t];
-            int iB = indices[t + 1];
-            int iC = indices[t + 2];
+        // ═══════════════════════════════════════════
+        // PASSE 1 : Accumuler les normales des triangles
+        // ═══════════════════════════════════════════
+        for (int i = 0; i < indices.length; i += 3) {
+            int iA = indices[i];
+            int iB = indices[i + 1];
+            int iC = indices[i + 2];
 
-            // Récupérer les 3 sommets du triangle
+            // Positions des 3 sommets du triangle
             float ax = vertices[iA * 3],     ay = vertices[iA * 3 + 1], az = vertices[iA * 3 + 2];
             float bx = vertices[iB * 3],     by = vertices[iB * 3 + 1], bz = vertices[iB * 3 + 2];
             float cx = vertices[iC * 3],     cy = vertices[iC * 3 + 1], cz = vertices[iC * 3 + 2];
 
-            // Vecteurs B-A et C-A
-            float abx = bx - ax, aby = by - ay, abz = bz - az;
-            float acx = cx - ax, acy = cy - ay, acz = cz - az;
+            // Deux arêtes du triangle
+            float e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+            float e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
 
-            // Produit vectoriel (B-A) × (C-A) → normale du triangle (non normalisée)
-            float nx = aby * acz - abz * acy;
-            float ny = abz * acx - abx * acz;
-            float nz = abx * acy - aby * acx;
+            // Produit vectoriel e1 × e2 = normale (non normalisée)
+            // Sa longueur est proportionnelle à l'aire → pondération automatique
+            float nx = e1y * e2z - e1z * e2y;
+            float ny = e1z * e2x - e1x * e2z;
+            float nz = e1x * e2y - e1y * e2x;
 
             // Ajouter aux 3 sommets
             normals[iA * 3]     += nx;  normals[iA * 3 + 1] += ny;  normals[iA * 3 + 2] += nz;
@@ -81,7 +104,9 @@ public class MeshConverter {
             normals[iC * 3]     += nx;  normals[iC * 3 + 1] += ny;  normals[iC * 3 + 2] += nz;
         }
 
-        // PASSE 2 : normalisation
+        // ═══════════════════════════════════════════
+        // PASSE 2 : Normalisation
+        // ═══════════════════════════════════════════
         for (int v = 0; v < vertexCount; v++) {
             float nx = normals[v * 3];
             float ny = normals[v * 3 + 1];
@@ -93,7 +118,7 @@ public class MeshConverter {
                 normals[v * 3 + 1] = ny / len;
                 normals[v * 3 + 2] = nz / len;
             } else {
-                // Sommet dégénéré (jamais référencé ou triangles invalides)
+                // Sommet dégénéré (jamais référencé)
                 normals[v * 3]     = 0;
                 normals[v * 3 + 1] = 1;  // fallback vers le haut
                 normals[v * 3 + 2] = 0;
@@ -102,4 +127,5 @@ public class MeshConverter {
 
         return normals;
     }
+
 }

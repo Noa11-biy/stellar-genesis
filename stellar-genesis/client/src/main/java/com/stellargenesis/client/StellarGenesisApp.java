@@ -32,6 +32,8 @@ import com.stellargenesis.core.physics.math.Frustum;
 import com.stellargenesis.core.player.MiningSystem;
 import com.stellargenesis.core.world.*;
 import com.stellargenesis.core.physics.PlanetData;
+import com.stellargenesis.core.world.biome.BiomeRules;
+import com.stellargenesis.core.world.biome.ColorPalette;
 import com.stellargenesis.core.world.density.DensityFieldGenerator;
 import com.stellargenesis.core.world.meshing.ChunkMesh;
 import com.stellargenesis.core.world.meshing.ChunkMesher;
@@ -100,6 +102,10 @@ public class StellarGenesisApp extends SimpleApplication {
     private boolean gameInitialized = false;
     private boolean chunksReady = false;
     private float spawnY;
+
+    // -- Coloration terrain --
+    private com.stellargenesis.core.world.biome.BiomeRules biomeRules;
+    private com.stellargenesis.core.world.biome.ColorPalette palette;
 
     // ═══════════════════════════════════════════
     //  MAIN — Point d'entrée
@@ -450,6 +456,9 @@ public class StellarGenesisApp extends SimpleApplication {
 
         worldNode = new Node("World");
         rootNode.attachChild(worldNode);
+
+        biomeRules = BiomeRules.earthLike();
+        palette    = ColorPalette.earthLike();
     }
 
 
@@ -462,8 +471,9 @@ public class StellarGenesisApp extends SimpleApplication {
         // Matériau Lighting = réagit à la lumière (ombres, reflets)
         blockMaterial = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
         blockMaterial.setBoolean("UseMaterialColors", true);
-        blockMaterial.setColor("Diffuse", ColorRGBA.Gray);
-        blockMaterial.setColor("Ambient", ColorRGBA.DarkGray);
+        blockMaterial.setBoolean("UseVertexColor", true);
+        blockMaterial.setColor("Diffuse", ColorRGBA.White);
+        blockMaterial.setColor("Ambient", ColorRGBA.White);
     }
 
     /**
@@ -563,7 +573,12 @@ public class StellarGenesisApp extends SimpleApplication {
             int attached = 0;
             ChunkManager.ChunkMeshPair pair;
             while (attached < limit && (pair = chunkManager.getReadyQueue().poll()) != null) {
-                com.jme3.scene.Mesh jmeMesh = MeshConverter.toJmeMesh(pair.mesh());
+                com.jme3.scene.Mesh jmeMesh = MeshConverter.toJmeMesh(
+                        pair.mesh(), pair.pos(),
+                        densityGenerator.getBaseHeight(),
+                        densityGenerator.getAmplitude(),
+                        biomeRules, palette
+                );
                 attachChunk(pair.pos(), jmeMesh);
                 attached++;
             }
@@ -637,7 +652,11 @@ public class StellarGenesisApp extends SimpleApplication {
 
                 ChunkMesh chunkMesh = ChunkMesher.mesh(chunk.getDensityField());
                 Mesh newMesh = (chunkMesh != null && chunkMesh.getVertices().length > 0)
-                        ? MeshConverter.toJmeMesh(chunkMesh)
+                        ? MeshConverter.toJmeMesh(
+                        chunkMesh, pos,
+                        densityGenerator.getBaseHeight(),
+                        densityGenerator.getAmplitude(),
+                        biomeRules, palette)
                         : null;
 
                 if (newMesh == null) {
@@ -695,9 +714,18 @@ public class StellarGenesisApp extends SimpleApplication {
     }
 
     private void attachChunk(ChunkPos pos, com.jme3.scene.Mesh mesh) {
-        // Vérifier qu'il n'est pas déjà attaché (sécurité)
-        if (worldNode.getChild("chunk_" + pos) != null) return;
+        // 1. DÉTACHER l'ancien s'il existe (au lieu de return)
+        com.jme3.scene.Spatial old = worldNode.getChild("chunk_" + pos);
+        if (old != null) {
+            // retirer son corps physique d'abord
+            RigidBodyControl oldRb = old.getControl(RigidBodyControl.class);
+            if (oldRb != null) {
+                bulletAppState.getPhysicsSpace().remove(oldRb);
+            }
+            worldNode.detachChild(old);
+        }
 
+        // 2. Créer le nouveau (ton code actuel)
         Geometry geom = new Geometry("chunk_" + pos, mesh);
         geom.setMaterial(blockMaterial);
         geom.setLocalTranslation(
@@ -707,8 +735,7 @@ public class StellarGenesisApp extends SimpleApplication {
         );
         geom.setUserData("cx", pos.x);
         geom.setUserData("cy", pos.y);
-        geom.setUserData("cz", pos.z); // un seul userData
-
+        geom.setUserData("cz", pos.z);
 
         RigidBodyControl rb = new RigidBodyControl(
                 new MeshCollisionShape(mesh), 0f
@@ -751,7 +778,12 @@ public class StellarGenesisApp extends SimpleApplication {
 
                     ChunkMesh chunkMesh = ChunkMesher.mesh(chunk.getDensityField());
                     if (chunkMesh != null && chunkMesh.getVertices().length > 0) {
-                        com.jme3.scene.Mesh mesh = MeshConverter.toJmeMesh(chunkMesh);
+                        com.jme3.scene.Mesh mesh = MeshConverter.toJmeMesh(
+                                chunkMesh, pos,
+                                densityGenerator.getBaseHeight(),
+                                densityGenerator.getAmplitude(),
+                                biomeRules, palette
+                        );
                         attachChunk(pos, mesh);
                     }
                 }
